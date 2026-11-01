@@ -3,8 +3,8 @@
  * Dirección y UTP — Planificación Académica, Cursos (1º a 8º Básico), Panorama General y Carga Docente (65/35)
  */
 
-// URL de Firebase Realtime Database (puedes dejarla fija aquí o configurarla en el botón "☁️ Conectar Base de Datos")
-const DEFAULT_FIREBASE_DB_URL = '';
+// URL de Firebase Realtime Database (integrada fija para sincronización automática en todos los dispositivos)
+const DEFAULT_FIREBASE_DB_URL = 'https://horarios-colegio-bc2db-default-rtdb.firebaseio.com';
 const FIREBASE_URL_STORAGE_KEY = 'eduhorario_firebase_db_url_v1';
 
 const ACTIVE_YEAR_KEY = 'eduhorario_active_school_year_v4';
