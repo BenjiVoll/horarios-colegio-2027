@@ -3,8 +3,13 @@
  * Dirección y UTP — Planificación Académica, Cursos (1º a 8º Básico), Panorama General y Carga Docente (65/35)
  */
 
-const ACTIVE_YEAR_KEY = 'eduhorario_active_school_year_v3';
-const STORAGE_PREFIX = 'eduhorario_school_data_v3_';
+// URL de Firebase Realtime Database (puedes dejarla fija aquí o configurarla en el botón "☁️ Conectar Base de Datos")
+const DEFAULT_FIREBASE_DB_URL = '';
+const FIREBASE_URL_STORAGE_KEY = 'eduhorario_firebase_db_url_v1';
+
+const ACTIVE_YEAR_KEY = 'eduhorario_active_school_year_v4';
+const STORAGE_PREFIX = 'eduhorario_school_data_v4_';
+const CLIENT_SESSION_ID = 'client_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 
 const DAYS = [
   { index: 0, name: 'Lunes', short: 'LUN', maxClassBlocks: 8 },
@@ -16,6 +21,8 @@ const DAYS = [
 
 let currentSchoolYear = '2026';
 let undoStack = [];
+let cloudSyncTimer = null;
+let isPushingToCloud = false;
 
 // Estado global
 let state = {
@@ -24,7 +31,9 @@ let state = {
   periods: [],
   requirements: [],
   assignments: {},
-  teacherUnavailable: {}
+  teacherUnavailable: {},
+  updatedAt: 0,
+  clientId: CLIENT_SESSION_ID
 };
 
 // Estado de interfaz (UI)
@@ -531,10 +540,159 @@ function getInstitutionalBaseData(includeScheduleAssignments = true) {
 }
 
 /* ==========================================================================
-   PERSISTENCIA POR AÑO ESCOLAR Y UTILIDADES
+   PERSISTENCIA DINÁMICA EN LA NUBE (FIREBASE) Y POR AÑO ESCOLAR
    ========================================================================== */
 function getStorageKeyForYear(year) {
   return `${STORAGE_PREFIX}${year}`;
+}
+
+function getActiveFirebaseUrl() {
+  const saved = (localStorage.getItem(FIREBASE_URL_STORAGE_KEY) || DEFAULT_FIREBASE_DB_URL || '').trim();
+  if (!saved) return '';
+  return saved.replace(/\/+$/, '').replace(/\.json$/i, '');
+}
+
+function getCloudEndpoint(year) {
+  const baseUrl = getActiveFirebaseUrl();
+  if (!baseUrl) return '';
+  return `${baseUrl}/sistema_horarios_${year}.json`;
+}
+
+function updateCloudStatusUI(status, customMessage = '') {
+  const dot = document.getElementById('cloudStatusDot');
+  const text = document.getElementById('cloudStatusText');
+  const banner = document.getElementById('cloudModalStatusDetail');
+  if (!dot || !text) return;
+
+  dot.className = 'cloud-dot';
+  if (status === 'connected') {
+    dot.classList.add('connected');
+    text.textContent = customMessage || '☁️ Nube Sincronizada';
+    if (banner) banner.textContent = `Conectado y sincronizado en tiempo real (${getActiveFirebaseUrl()})`;
+  } else if (status === 'syncing') {
+    dot.classList.add('syncing');
+    text.textContent = customMessage || '☁️ Guardando...';
+  } else if (status === 'error') {
+    dot.classList.add('error');
+    text.textContent = customMessage || '☁️ Error de Nube';
+    if (banner) banner.textContent = 'No se pudo conectar a la URL indicada. Verifica que termine en .firebaseio.com y esté en Modo de Prueba.';
+  } else {
+    dot.classList.add('disconnected');
+    text.textContent = '☁️ Conectar Base de Datos';
+    if (banner) banner.textContent = 'Modo Local — Haz clic en Conectar para sincronizar entre dispositivos.';
+  }
+}
+
+async function pushStateToCloud(year = currentSchoolYear) {
+  const endpoint = getCloudEndpoint(year);
+  if (!endpoint) {
+    updateCloudStatusUI('disconnected');
+    return false;
+  }
+
+  try {
+    isPushingToCloud = true;
+    updateCloudStatusUI('syncing', '☁️ Guardando...');
+    const payload = {
+      ...state,
+      updatedAt: state.updatedAt || Date.now(),
+      clientId: CLIENT_SESSION_ID
+    };
+
+    const res = await fetch(endpoint, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    updateCloudStatusUI('connected', '☁️ Nube Sincronizada');
+    return true;
+  } catch (err) {
+    console.error('Error al guardar en Firebase:', err);
+    updateCloudStatusUI('error', '☁️ Error al guardar');
+    return false;
+  } finally {
+    isPushingToCloud = false;
+  }
+}
+
+async function pullStateFromCloud(year = currentSchoolYear, options = { force: false, silent: false }) {
+  const endpoint = getCloudEndpoint(year);
+  if (!endpoint) {
+    updateCloudStatusUI('disconnected');
+    return false;
+  }
+
+  if (isPushingToCloud && !options.force) return false;
+
+  try {
+    if (!options.silent) {
+      updateCloudStatusUI('syncing', '☁️ Sincronizando...');
+    }
+    const res = await fetch(`${endpoint}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const cloudData = await res.json();
+
+    // Si la base de datos en la nube aún está vacía (primera vez), subimos nuestro estado inicial (0/38)
+    if (!cloudData || !Array.isArray(cloudData.courses)) {
+      await pushStateToCloud(year);
+      return true;
+    }
+
+    const cloudUpdatedAt = Number(cloudData.updatedAt || 0);
+    const localUpdatedAt = Number(state.updatedAt || 0);
+
+    if (options.force || cloudUpdatedAt > localUpdatedAt || (cloudUpdatedAt !== localUpdatedAt && cloudData.clientId !== CLIENT_SESSION_ID)) {
+      state = {
+        teachers: cloudData.teachers || [],
+        courses: cloudData.courses || [],
+        periods: cloudData.periods || [],
+        requirements: cloudData.requirements || [],
+        assignments: cloudData.assignments || {},
+        teacherUnavailable: cloudData.teacherUnavailable || {},
+        updatedAt: cloudUpdatedAt || Date.now(),
+        clientId: cloudData.clientId || ''
+      };
+      try {
+        localStorage.setItem(getStorageKeyForYear(year), JSON.stringify(state));
+      } catch (e) {
+        console.error(e);
+      }
+      renderAll();
+      if (!options.silent && !options.isInitial) {
+        showToast('☁️ Horario sincronizado desde la nube.', 'info');
+      }
+    }
+
+    updateCloudStatusUI('connected', '☁️ Nube Sincronizada');
+    return true;
+  } catch (err) {
+    console.error('Error al descargar desde Firebase:', err);
+    updateCloudStatusUI('error', '☁️ Error de conexión');
+    return false;
+  }
+}
+
+function startCloudSyncLoop() {
+  if (cloudSyncTimer) clearInterval(cloudSyncTimer);
+  cloudSyncTimer = setInterval(() => {
+    if (getActiveFirebaseUrl() && !isPushingToCloud) {
+      pullStateFromCloud(currentSchoolYear, { force: false, silent: true });
+    }
+  }, 4000);
+
+  window.addEventListener('focus', () => {
+    if (getActiveFirebaseUrl() && !isPushingToCloud) {
+      pullStateFromCloud(currentSchoolYear, { force: false, silent: true });
+    }
+  });
 }
 
 function loadState(year = null) {
@@ -564,8 +722,15 @@ function loadState(year = null) {
           periods: parsed.periods || [],
           requirements: parsed.requirements || [],
           assignments: parsed.assignments || {},
-          teacherUnavailable: parsed.teacherUnavailable || {}
+          teacherUnavailable: parsed.teacherUnavailable || {},
+          updatedAt: Number(parsed.updatedAt || 0),
+          clientId: parsed.clientId || CLIENT_SESSION_ID
         };
+        if (getActiveFirebaseUrl()) {
+          pullStateFromCloud(currentSchoolYear, { force: true, silent: true, isInitial: true });
+        } else {
+          updateCloudStatusUI('disconnected');
+        }
         return;
       }
     }
@@ -573,18 +738,31 @@ function loadState(year = null) {
     console.error('Error al cargar almacenamiento local:', err);
   }
 
-  const includeAssignments = currentSchoolYear === '2026';
-  state = getInstitutionalBaseData(includeAssignments);
-  saveState();
+  // Por defecto inicia en blanco desde cero (0/38 bloques asignados), manteniendo cursos, asignaturas y profesores listos
+  state = getInstitutionalBaseData(false);
+  state.updatedAt = Date.now();
+  state.clientId = CLIENT_SESSION_ID;
+  saveState(false);
+
+  if (getActiveFirebaseUrl()) {
+    pullStateFromCloud(currentSchoolYear, { force: true, silent: true, isInitial: true });
+  } else {
+    updateCloudStatusUI('disconnected');
+  }
 }
 
-function saveState() {
+function saveState(syncCloud = true) {
+  state.updatedAt = Date.now();
+  state.clientId = CLIENT_SESSION_ID;
   try {
     localStorage.setItem(getStorageKeyForYear(currentSchoolYear), JSON.stringify(state));
   } catch (err) {
     console.error('Error al guardar en almacenamiento local:', err);
   }
   updateGlobalCounters();
+  if (syncCloud && getActiveFirebaseUrl()) {
+    pushStateToCloud(currentSchoolYear);
+  }
 }
 
 function uid(prefix = 'id') {
@@ -2655,17 +2833,81 @@ function initEventListeners() {
   });
 
   document.getElementById('btnResetYearData').addEventListener('click', () => {
-    const is2026 = currentSchoolYear === '2026';
-    const msg = is2026
-      ? '¿Restaurar la programación base oficial del año 2026?'
-      : `¿Reiniciar la plantilla del año ${currentSchoolYear} en blanco conservando cursos y plan de estudios base?`;
+    const msg = `¿Reiniciar el tablero del año ${currentSchoolYear} en blanco (0/38 bloques) conservando los cursos (1º a 8º), asignaturas y profesores?`;
     if (!confirm(msg)) return;
     pushUndoSnapshot();
-    state = getInstitutionalBaseData(is2026);
+    state = getInstitutionalBaseData(false);
     saveState();
     renderAll();
-    showToast(`✅ Configuración base (${currentSchoolYear}) restaurada.`, 'success');
+    showToast(`🧹 Horario (${currentSchoolYear}) reiniciado a cero en todos los cursos.`, 'success');
   });
+
+  // Eventos de Base de Datos en la Nube (Firebase Realtime Database)
+  const cloudModal = document.getElementById('cloudConfigModal');
+  const inputFirebaseUrl = document.getElementById('inputFirebaseDbUrl');
+
+  const openCloudModal = () => {
+    if (!cloudModal) return;
+    if (inputFirebaseUrl) {
+      inputFirebaseUrl.value = getActiveFirebaseUrl();
+    }
+    updateCloudStatusUI(getActiveFirebaseUrl() ? 'connected' : 'disconnected');
+    cloudModal.classList.remove('hidden');
+  };
+
+  const closeCloudModal = () => {
+    if (cloudModal) cloudModal.classList.add('hidden');
+  };
+
+  const btnOpenCloud = document.getElementById('btnOpenCloudModal');
+  if (btnOpenCloud) btnOpenCloud.addEventListener('click', openCloudModal);
+
+  const btnCloseCloud = document.getElementById('btnCloseCloudModal');
+  if (btnCloseCloud) btnCloseCloud.addEventListener('click', closeCloudModal);
+
+  const btnCancelCloud = document.getElementById('btnCancelCloudModal');
+  if (btnCancelCloud) btnCancelCloud.addEventListener('click', closeCloudModal);
+
+  const btnSaveCloud = document.getElementById('btnSaveCloudUrl');
+  if (btnSaveCloud) {
+    btnSaveCloud.addEventListener('click', async () => {
+      const rawUrl = (inputFirebaseUrl ? inputFirebaseUrl.value : '').trim();
+      if (!rawUrl) {
+        showToast('Ingresa la URL de tu Firebase Realtime Database.', 'warn');
+        return;
+      }
+      const cleaned = rawUrl.replace(/\/+$/, '').replace(/\.json$/i, '');
+      localStorage.setItem(FIREBASE_URL_STORAGE_KEY, cleaned);
+      const ok = await pullStateFromCloud(currentSchoolYear, { force: true, silent: false });
+      if (ok) {
+        showToast('☁️ Base de datos en la nube conectada y sincronizada.', 'success');
+        closeCloudModal();
+      } else {
+        showToast('⚠️ No se pudo conectar a esa URL. Verifica que esté en Modo de Prueba (Test Mode).', 'error');
+      }
+    });
+  }
+
+  const btnForcePull = document.getElementById('btnForcePullCloud');
+  if (btnForcePull) {
+    btnForcePull.addEventListener('click', async () => {
+      if (!getActiveFirebaseUrl()) {
+        showToast('Primero ingresa y guarda la URL de la base de datos.', 'warn');
+        return;
+      }
+      await pullStateFromCloud(currentSchoolYear, { force: true, silent: false });
+    });
+  }
+
+  const btnDisconnectCloud = document.getElementById('btnDisconnectCloud');
+  if (btnDisconnectCloud) {
+    btnDisconnectCloud.addEventListener('click', () => {
+      localStorage.removeItem(FIREBASE_URL_STORAGE_KEY);
+      updateCloudStatusUI('disconnected');
+      if (inputFirebaseUrl) inputFirebaseUrl.value = '';
+      showToast('Base de datos desconectada en este navegador.', 'info');
+    });
+  }
 
   document.getElementById('btnExportCSV').addEventListener('click', exportToCSV);
   document.getElementById('btnExportJSON').addEventListener('click', exportToJSON);
@@ -2705,4 +2947,5 @@ document.addEventListener('DOMContentLoaded', () => {
   loadState();
   initEventListeners();
   renderAll();
+  startCloudSyncLoop();
 });
