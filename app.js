@@ -2547,19 +2547,19 @@ function exportToCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `Planilla_Horarios_${currentSchoolYear}_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `Planilla_Horarios_Christian_College_${currentSchoolYear}_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
   showToast(`📊 Planilla CSV (${currentSchoolYear}) descargada.`, 'success');
 }
 
 function exportToJSON() {
-  const dataStr = JSON.stringify({ schoolYear: currentSchoolYear, ...state }, null, 2);
+  const dataStr = JSON.stringify({ institution: 'Christian College', schoolYear: currentSchoolYear, ...state }, null, 2);
   const blob = new Blob([dataStr], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `Respaldo_Horarios_${currentSchoolYear}_${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `Respaldo_Horarios_Christian_College_${currentSchoolYear}_${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
   showToast(`💾 Respaldo (${currentSchoolYear}) descargado.`, 'success');
