@@ -21,44 +21,31 @@
     <div class="topbar-actions">
       <!-- Selector de Año Escolar -->
       <div class="year-selector-box" title="Cambiar de Año Escolar (cada año guarda su propia planificación de forma independiente en la nube)">
-        <label for="selectSchoolYear">Año Escolar:</label>
+        <label for="selectSchoolYear">Año:</label>
         <select id="selectSchoolYear" class="year-select">
           <option value="2026">2026</option>
           <option value="2027">2027</option>
         </select>
       </div>
 
+      <div class="conflict-badge" id="globalConflictBadge" title="Estado de validación de topones en todo el colegio">
+        <span class="dot ok"></span>
+        <span id="globalConflictText">0 Topones</span>
+      </div>
+
+      <button class="btn btn-outline-light btn-sm" id="btnUndo" title="Deshacer el último cambio realizado en el horario" disabled>
+        ↩️ Deshacer
+      </button>
+
       <!-- Botón Principal para Guardar Cambios en la Base de Datos -->
-      <button class="btn btn-save-db btn-sm saved" id="btnSaveChanges" type="button" title="Guardar todos los cambios realizados en la Base de Datos en la Nube">
+      <button class="btn btn-save-db btn-sm saved" id="btnSaveChanges" type="button" title="Guardar todos los cambios realizados en la Base de Datos en la Nube (Ctrl+S)">
         ✅ Guardado
       </button>
 
-      <!-- Estado y Configuración de Base de Datos en la Nube -->
-      <button class="btn btn-cloud btn-sm" id="btnOpenCloudModal" type="button" title="Configurar o verificar la sincronización con la Base de Datos en la Nube (Firebase)">
-        <span class="cloud-dot disconnected" id="cloudStatusDot"></span>
-        <span id="cloudStatusText">☁️ Nube</span>
+      <button class="btn btn-outline-light btn-sm" id="btnExportCSV" title="Descargar planilla de horarios para abrir en planilla de cálculo">
+        📊 Exportar Planilla
       </button>
 
-      <div class="conflict-badge" id="globalConflictBadge" title="Estado de validación de topones en todo el colegio">
-        <span class="dot ok"></span>
-        <span id="globalConflictText">0 Topones detectados</span>
-      </div>
-      <button class="btn btn-outline btn-sm" id="btnUndo" title="Deshacer el último cambio realizado en el horario" disabled>
-        ↩️ Deshacer
-      </button>
-      <button class="btn btn-outline btn-sm" id="btnResetYearData" title="Reiniciar el tablero de horarios a cero (0/38 bloques) manteniendo cursos, asignaturas y profesores">
-        🧹 Reiniciar a Cero
-      </button>
-      <button class="btn btn-outline btn-sm" id="btnExportCSV" title="Descargar planilla de horarios en formato CSV">
-        📊 Exportar Planilla (CSV)
-      </button>
-      <button class="btn btn-outline btn-sm" id="btnExportJSON" title="Descargar archivo de respaldo en tu computador">
-        📥 Descargar Respaldo
-      </button>
-      <label class="btn btn-outline btn-sm file-label" title="Cargar un archivo de respaldo previamente guardado">
-        📂 Cargar Respaldo
-        <input type="file" id="inputImportJSON" accept=".json" hidden />
-      </label>
       <button class="btn btn-primary btn-sm" id="btnPrint" title="Imprimir o guardar como PDF la vista actual">
         🖨️ Imprimir / PDF
       </button>
@@ -82,11 +69,8 @@
     <button class="nav-tab" data-tab="tab-cursos">
       📚 Plan de Estudio por Curso (<span id="navCountCursos">0</span>)
     </button>
-    <button class="nav-tab" data-tab="tab-bloques">
-      ⏰ Bloques y Jornada
-    </button>
     <button class="nav-tab nav-tab-help" data-tab="tab-manual">
-      📖 Manual de Usuario (Ayuda UTP)
+      📖 Ayuda y Opciones UTP
     </button>
   </nav>
 
@@ -115,7 +99,7 @@
             </div>
             <div class="card-body">
               <div class="course-quick-pills" id="courseQuickPills"></div>
-              <select id="selectActiveCourse" class="form-control form-control-lg" style="margin-top:0.5rem; width:100%;"></select>
+              <select id="selectActiveCourse" class="form-control form-control-lg hidden" style="margin-top:0.5rem; width:100%;"></select>
               <div id="courseProgressSummary" class="course-progress-box"></div>
             </div>
           </div>
@@ -145,22 +129,28 @@
 
           <div class="card">
             <div class="card-header">
-              <h2>3. Acciones Rápidas</h2>
+              <h2>3. Acciones de Este Curso</h2>
             </div>
             <div class="card-body">
               <div class="stack-buttons">
                 <button class="btn btn-accent btn-block" id="btnAutoFillCourse">
-                  🪄 Autocompletar Horas Faltantes (Este Curso)
-                </button>
-                <button class="btn btn-primary btn-block" id="btnAutoFillAll">
-                  🚀 Autocompletar Todos los Cursos (1º a 8º)
+                  🪄 Autocompletar Horas Faltantes
                 </button>
                 <button class="btn btn-danger-outline btn-block btn-sm" id="btnClearCourseSchedule">
                   🗑️ Vaciar Horario de Este Curso
                 </button>
-                <button class="btn btn-danger-outline btn-block btn-sm" id="btnClearAllSchedules">
-                  🗑️ Vaciar Todos los Cursos (Armar desde cero)
-                </button>
+
+                <details class="advanced-actions-details">
+                  <summary>⚙️ Acciones para todo el colegio (1º a 8º)</summary>
+                  <div class="stack-buttons" style="margin-top:0.55rem;">
+                    <button class="btn btn-primary btn-block btn-sm" id="btnAutoFillAll">
+                      🚀 Autocompletar Todos los Cursos
+                    </button>
+                    <button class="btn btn-danger-outline btn-block btn-sm" id="btnClearAllSchedules">
+                      🗑️ Vaciar Todos los Cursos
+                    </button>
+                  </div>
+                </details>
               </div>
             </div>
           </div>
@@ -572,13 +562,40 @@
             <!-- Paso 6 -->
             <div class="manual-section">
               <div class="manual-badge">6</div>
-              <h3>Cómo Editar Profesores, Planes de Estudio, Respaldar e Imprimir</h3>
+              <h3>Cómo Editar Profesores, Planes de Estudio e Imprimir</h3>
               <ul>
                 <li><strong>Cambiar el profesor de una asignatura:</strong> Ve a <strong>📚 Plan de Estudio por Curso</strong>, elige el curso a la izquierda, presiona el botón <code>✏️</code> junto a la asignatura, selecciona al nuevo profesor y presiona <strong>Actualizar</strong>. El cambio se actualizará automáticamente en todo el horario.</li>
                 <li><strong>Revisar horas de contrato y proporción 65/35:</strong> En <strong>📑 Carga Docente (65/35 y SEP)</strong> puedes agregar profesores nuevos, editar sus horas SEP/PIE o abrir su <strong>📋 Ficha</strong> detallada.</li>
-                <li><strong>Guardar y compartir cambios entre computadores (💾 / 📂):</strong> Como el sistema funciona directo en el navegador, los cambios se guardan automáticamente en tu computador. Si deseas enviar tu trabajo a otro computador (Windows o Mac), presiona <strong>💾 Guardar Respaldo</strong> (descarga un archivo <code>.json</code>) y en el otro computador presiona <strong>📂 Cargar Respaldo</strong>.</li>
+                <li><strong>Confirmar cambios en la Nube (💾 Guardar Cambios):</strong> Cuando asignes o modifiques bloques, presiona el botón superior <strong>💾 Guardar Cambios</strong> (o <code>Ctrl + S</code>) para publicar los cambios en todos los dispositivos.</li>
                 <li><strong>Imprimir o Guardar en PDF (🖨️):</strong> Entra al horario del curso, del profesor o al Panorama General y presiona <strong>🖨️ Imprimir / PDF</strong> arriba a la derecha.</li>
               </ul>
+            </div>
+          </div>
+
+          <!-- Panel de Herramientas Avanzadas y Respaldo (Separado de la vista principal para evitar clics accidentales) -->
+          <div class="admin-tools-panel no-print" style="margin-top:1.75rem; padding:1.25rem; background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px;">
+            <h3 style="margin:0 0 0.4rem 0; font-size:1rem; color:#1a202c;">⚙️ Herramientas de Administración, Copias de Seguridad y Jornada</h3>
+            <p class="helper-text" style="padding:0; margin-bottom:1rem;">
+              Estas opciones están resguardadas aquí para mantener limpia la barra principal de trabajo diario y evitar reinicios accidentales.
+            </p>
+            <div style="display:flex; flex-wrap:wrap; gap:0.65rem; align-items:center;">
+              <button class="btn btn-outline btn-sm" id="btnOpenBlocksTab" type="button" onclick="document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active')); document.getElementById('tab-bloques').classList.add('active');">
+                ⏰ Ver / Editar Bloques y Recreos de la Jornada
+              </button>
+              <button class="btn btn-outline btn-sm" id="btnExportJSON" type="button" title="Descargar copia de seguridad completa en formato .json">
+                📥 Descargar Copia de Seguridad (.json)
+              </button>
+              <label class="btn btn-outline btn-sm file-label" title="Cargar un archivo de respaldo previamente guardado">
+                📂 Restaurar desde Copia (.json)
+                <input type="file" id="inputImportJSON" accept=".json" hidden />
+              </label>
+              <button class="btn btn-outline btn-sm" id="btnOpenCloudModal" type="button" title="Ver estado de conexión con Firebase Realtime Database">
+                <span class="cloud-dot connected" id="cloudStatusDot"></span>
+                <span id="cloudStatusText">☁️ Estado de Base de Datos</span>
+              </button>
+              <button class="btn btn-danger-outline btn-sm" id="btnResetYearData" type="button" title="Reiniciar el tablero de horarios a cero (0/38 bloques) manteniendo cursos, asignaturas y profesores">
+                🧹 Reiniciar Todo el Año a Cero (0/38)
+              </button>
             </div>
           </div>
         </div>

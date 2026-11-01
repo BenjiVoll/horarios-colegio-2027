@@ -334,14 +334,35 @@ body {
   background: var(--surface-alt);
 }
 
-.topbar .btn-outline {
-  background: rgba(255, 255, 255, 0.08);
+.topbar .btn-outline,
+.btn-outline-light {
+  background: rgba(255, 255, 255, 0.1);
   color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
-.topbar .btn-outline:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.18);
+.topbar .btn-outline:hover:not(:disabled),
+.btn-outline-light:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.advanced-actions-details {
+  margin-top: 0.35rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border-strong);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.advanced-actions-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+  padding: 0.2rem 0;
+}
+
+.advanced-actions-details summary:hover {
+  color: var(--primary);
 }
 
 .btn-danger-outline {
