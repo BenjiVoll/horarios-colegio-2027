@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistema de Gestión de Horarios Escolares</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Barra Superior -->
+  <header class="topbar no-print">
+    <div class="brand">
+      <div class="brand-icon">🏫</div>
+      <div>
+        <h1>Sistema de Gestión de Horarios</h1>
+        <p class="subtitle">Planificación Académica, Cursos y Carga Horaria Docente (1º a 8º Básico)</p>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <!-- Selector de Año Escolar -->
+      <div class="year-selector-box" title="Cambiar de Año Escolar (cada año guarda su propia planificación de forma independiente)">
+        <label for="selectSchoolYear">Año:</label>
+        <select id="selectSchoolYear" class="year-select">
+          <option value="2026">2026</option>
+          <option value="2027">2027 (Desde cero)</option>
+        </select>
+      </div>
+
+      <div class="conflict-badge" id="globalConflictBadge" title="Estado de validación de topones en todo el colegio">
+        <span class="dot ok"></span>
+        <span id="globalConflictText">0 Topones detectados</span>
+      </div>
+      <button class="btn btn-outline btn-sm" id="btnResetYearData" title="Restaurar la configuración predeterminada del año seleccionado">
+        🔄 Restaurar Base
+      </button>
+      <button class="btn btn-outline btn-sm" id="btnExportCSV" title="Descargar planilla de horarios en formato CSV">
+        📊 Exportar Planilla (CSV)
+      </button>
+      <button class="btn btn-outline btn-sm" id="btnExportJSON" title="Guardar respaldo completo del sistema">
+        💾 Guardar Respaldo
+      </button>
+      <label class="btn btn-outline btn-sm file-label" title="Cargar respaldo desde archivo">
+        📂 Cargar Respaldo
+        <input type="file" id="inputImportJSON" accept=".json" hidden />
+      </label>
+      <button class="btn btn-primary btn-sm" id="btnPrint" title="Imprimir o guardar como PDF la vista actual">
+        🖨️ Imprimir / PDF
+      </button>
+    </div>
+  </header>
+
+  <!-- Navegación Principal -->
+  <nav class="main-nav no-print">
+    <button class="nav-tab active" data-tab="tab-calendario">
+      🗓️ Horario por Curso (1º a 8º)
+    </button>
+    <button class="nav-tab" data-tab="tab-resumen">
+      📊 Sábana General de Horarios
+    </button>
+    <button class="nav-tab" data-tab="tab-profesor-vista">
+      👨‍🏫 Horario por Profesor
+    </button>
+    <button class="nav-tab" data-tab="tab-profesores">
+      📑 Carga Docente (Lectivas / SEP / No Lectivas) (<span id="navCountProfesores">0</span>)
+    </button>
+    <button class="nav-tab" data-tab="tab-cursos">
+      📚 Plan de Estudio por Curso (<span id="navCountCursos">0</span>)
+    </button>
+    <button class="nav-tab" data-tab="tab-bloques">
+      ⏰ Bloques y Jornada (38 hrs)
+    </button>
+  </nav>
+
+  <!-- Contenedor de Notificaciones Toast -->
+  <div id="toastContainer" class="toast-container no-print"></div>
+
+  <!-- Contenido Principal -->
+  <main class="main-container">
+
+    <!-- ==================== TAB 1: ASIGNADOR DE HORARIOS POR CURSO ==================== -->
+    <section id="tab-calendario" class="tab-panel active">
+      <div class="scheduler-layout">
+        <!-- Panel Lateral Izquierdo -->
+        <aside class="scheduler-sidebar no-print">
+          <div class="card">
+            <div class="card-header">
+              <h2>1. Seleccionar Curso</h2>
+            </div>
+            <div class="card-body">
+              <div class="course-quick-pills" id="courseQuickPills"></div>
+              <select id="selectActiveCourse" class="form-control form-control-lg" style="margin-top:0.5rem; width:100%;"></select>
+              <div id="courseProgressSummary" class="course-progress-box"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header-flex">
+              <h2>2. Asignaturas del Curso</h2>
+              <button class="btn btn-xs btn-link" id="btnGoToCoursePlan" title="Editar asignaturas y profesores de este curso">
+                ⚙️ Editar Plan
+              </button>
+            </div>
+            <p class="helper-text">
+              Haz <strong>clic</strong> en una asignatura (o <strong>arrástrala</strong> al horario). Los bloques donde el profesor ya hace clases en otro curso se bloquean en rojo para evitar topones.
+            </p>
+            <div id="courseSubjectsPalette" class="palette-list"></div>
+
+            <div class="eraser-box">
+              <button id="btnSelectEraser" class="palette-item eraser-item" type="button">
+                <span class="eraser-icon">🧹</span>
+                <div>
+                  <strong>Modo Borrador</strong>
+                  <small>Haz clic en un bloque del horario para vaciarlo</small>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>3. Acciones Rápidas</h2>
+            </div>
+            <div class="card-body">
+              <div class="stack-buttons">
+                <button class="btn btn-accent btn-block" id="btnAutoFillCourse">
+                  🪄 Autocompletar Horas Faltantes (Este Curso)
+                </button>
+                <button class="btn btn-primary btn-block" id="btnAutoFillAll">
+                  🚀 Autocompletar Todos los Cursos (1º a 8º)
+                </button>
+                <button class="btn btn-danger-outline btn-block btn-sm" id="btnClearCourseSchedule">
+                  🗑️ Vaciar Horario de Este Curso
+                </button>
+                <button class="btn btn-danger-outline btn-block btn-sm" id="btnClearAllSchedules">
+                  🗑️ Vaciar Todos los Cursos (Armar desde cero)
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Área Principal del Calendario del Curso -->
+        <div class="scheduler-main">
+          <div class="card calendar-card">
+            <div class="calendar-toolbar">
+              <div>
+                <h2 id="calendarCourseTitle">Horario del Curso</h2>
+                <p id="calendarActiveSelectionHint" class="selection-hint no-print">
+                  Selecciona una asignatura a la izquierda o haz clic directo en una celda para asignar.
+                </p>
+              </div>
+              <div class="legend no-print">
+                <span class="legend-item"><span class="legend-box free"></span> Libre</span>
+                <span class="legend-item"><span class="legend-box conflict"></span> Topón (Ocupado en otro curso)</span>
+                <span class="legend-item"><span class="legend-box unavailable"></span> No disponible / Viernes tarde</span>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="schedule-table" id="courseScheduleTable">
+                <thead>
+                  <tr id="courseScheduleHeader"></tr>
+                </thead>
+                <tbody id="courseScheduleBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 2: SÁBANA GENERAL DE HORARIOS ==================== -->
+    <section id="tab-resumen" class="tab-panel">
+      <div class="card">
+        <div class="card-header-flex">
+          <div>
+            <h2>1. Resumen General de Clases por Curso (1º a 8º Básico)</h2>
+            <p class="helper-text">Vista panorámica semanal de asignaturas por curso (Lunes a Jueves 8 bloques, Viernes 6 bloques = 38 hrs).</p>
+          </div>
+          <div class="no-print" id="sabanaConflictSummary"></div>
+        </div>
+        <div class="table-responsive" id="sabanaSubjectsContainer"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header-flex">
+          <div>
+            <h2>2. Resumen General de Profesores por Bloque (Control de Topones)</h2>
+            <p class="helper-text">Muestra la sigla del profesor asignado en cada curso y bloque. Si un profesor se repite en la misma columna (mismo día y hora), se marca automáticamente en <strong>ROJO</strong>.</p>
+          </div>
+        </div>
+        <div class="table-responsive" id="sabanaTeachersContainer"></div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 3: HORARIO POR PROFESOR ==================== -->
+    <section id="tab-profesor-vista" class="tab-panel">
+      <div class="teacher-view-layout">
+        <div class="card">
+          <div class="calendar-toolbar">
+            <div class="toolbar-left">
+              <label for="selectViewTeacher" class="toolbar-label">Profesor(a):</label>
+              <select id="selectViewTeacher" class="form-control form-control-lg"></select>
+            </div>
+            <div id="teacherViewStats" class="teacher-stats-pills"></div>
+            <div class="no-print">
+              <button class="btn btn-outline btn-sm" id="btnToggleAvailabilityMode">
+                🔒 Marcar Horas No Disponibles
+              </button>
+            </div>
+          </div>
+
+          <div id="availabilityModeBanner" class="availability-banner hidden no-print">
+            <span><strong>Modo Disponibilidad Activo:</strong> Haz clic en cualquier bloque libre para marcar o desmarcar que el profesor <strong>NO puede hacer clases en esa hora</strong>.</span>
+            <button class="btn btn-xs btn-primary" id="btnExitAvailabilityMode">Listo</button>
+          </div>
+
+          <div class="table-responsive">
+            <table class="schedule-table" id="teacherScheduleTable">
+              <thead>
+                <tr id="teacherScheduleHeader"></tr>
+              </thead>
+              <tbody id="teacherScheduleBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 4: HORAS LECTIVAS, SEP Y NO LECTIVAS ==================== -->
+    <section id="tab-profesores" class="tab-panel">
+      <div class="management-grid">
+        <!-- Formulario Crear/Editar Profesor -->
+        <div class="card no-print">
+          <div class="card-header">
+            <h2 id="teacherFormTitle">Agregar / Editar Profesor(a)</h2>
+          </div>
+          <form id="teacherForm" class="card-body form-stack">
+            <input type="hidden" id="teacherIdInput" />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="teacherInitialsInput">Sigla (Ej: ML, FF) *</label>
+                <input type="text" id="teacherInitialsInput" class="form-control" maxlength="5" placeholder="Ej: ML" required />
+              </div>
+              <div class="form-group">
+                <label for="teacherColorInput">Color</label>
+                <input type="color" id="teacherColorInput" class="form-control color-input" value="#2563eb" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="teacherNameInput">Nombre Completo *</label>
+              <input type="text" id="teacherNameInput" class="form-control" placeholder="Ej: MELISSA LUENGO" required />
+            </div>
+            <div class="form-group">
+              <label for="teacherSpecialtyInput">Especialidad / Jefatura *</label>
+              <input type="text" id="teacherSpecialtyInput" class="form-control" placeholder="Ej: JEFATURA 1º AÑO / Básica" required />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="teacherMaxHoursInput">Horas Lectivas Máx. (Pedag.)</label>
+                <input type="number" id="teacherMaxHoursInput" class="form-control" min="1" max="44" value="30" required />
+              </div>
+              <div class="form-group">
+                <label for="teacherSepHoursInput">Horas SEP (Talleres/Co-doc.)</label>
+                <input type="number" id="teacherSepHoursInput" class="form-control" min="0" max="30" value="0" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="teacherContractChronoInput">Jornada Semanal (Hrs Cronológicas)</label>
+                <input type="number" id="teacherContractChronoInput" class="form-control" min="1" max="44" value="38" />
+              </div>
+              <div class="form-group">
+                <label for="teacherPieHoursInput">Horas PIE / Otros</label>
+                <input type="text" id="teacherPieHoursInput" class="form-control" placeholder="Ej: 3 PIE" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="teacherSepDetailInput">Detalle Actividades SEP / Otras Lectivas (Kº, CRA, Co-docencia)</label>
+              <textarea id="teacherSepDetailInput" class="form-control" rows="2" placeholder="Ej: Co-docencia Matemática 4º (4h), Taller Fútbol (2h)"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="btnSaveTeacher">Guardar Profesor</button>
+              <button type="button" class="btn btn-outline hidden" id="btnCancelTeacherEdit">Cancelar</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Tabla de Profesores -->
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <h2>Cuadro de Horas Lectivas, SEP y No Lectivas (Proporción 65/35)</h2>
+              <p class="helper-text">Calcula en vivo las horas asignadas en los cursos (1º a 8º) y las cruza con las horas lectivas, SEP y jornada semanal de cada docente.</p>
+            </div>
+            <input type="search" id="searchTeacherInput" class="form-control form-control-sm no-print" placeholder="🔍 Buscar profesor o sigla..." />
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Sigla</th>
+                  <th>Profesor(a)</th>
+                  <th>Jefatura / Especialidad</th>
+                  <th>Hrs Plan Cursos (1º-8º)</th>
+                  <th>Hrs en Horario (1º-8º)</th>
+                  <th>Otras Lectivas / SEP</th>
+                  <th>Total Aula (Pedag.)</th>
+                  <th>Jornada Cronológica</th>
+                  <th class="no-print">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="teachersTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 5: CURSOS Y PLAN DE ESTUDIO ==================== -->
+    <section id="tab-cursos" class="tab-panel">
+      <div class="courses-layout">
+        <!-- Columna Izquierda: Lista de Cursos -->
+        <div class="card">
+          <div class="card-header">
+            <h2>Cursos (1º a 8º Básico)</h2>
+          </div>
+          <form id="courseForm" class="card-body inline-add-form no-print">
+            <input type="text" id="courseNameInput" class="form-control" placeholder="Nuevo curso (Ej: Kínder)" required />
+            <button type="submit" class="btn btn-primary">+ Crear</button>
+          </form>
+          <div id="coursesListContainer" class="courses-list"></div>
+        </div>
+
+        <!-- Columna Derecha: Plan de Horas del Curso Seleccionado -->
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <h2 id="coursePlanTitle">Plan de Estudio del Curso</h2>
+              <p class="helper-text" id="coursePlanSubtitle">Asignaturas, sigla, profesor asignado y horas pedagógicas semanales requeridas (Total oficial: 38 hrs).</p>
+            </div>
+            <div id="coursePlanBadge" class="badge-pill">0 / 38 hrs</div>
+          </div>
+
+          <form id="requirementForm" class="card-body requirement-form no-print">
+            <input type="hidden" id="reqIdInput" />
+            <div class="req-form-grid">
+              <div class="form-group">
+                <label for="reqSubjectInput">Asignatura *</label>
+                <input type="text" id="reqSubjectInput" class="form-control" placeholder="Ej: MATEMÁTICA" list="subjectsSuggestions" required />
+                <datalist id="subjectsSuggestions"></datalist>
+              </div>
+              <div class="form-group">
+                <label for="reqShortCodeInput">Sigla Ramo *</label>
+                <input type="text" id="reqShortCodeInput" class="form-control" placeholder="Ej: MAT, LENG" maxlength="6" required />
+              </div>
+              <div class="form-group">
+                <label for="reqTeacherSelect">Profesor Encargado *</label>
+                <select id="reqTeacherSelect" class="form-control" required></select>
+              </div>
+              <div class="form-group">
+                <label for="reqHoursInput">Hrs Semanales *</label>
+                <input type="number" id="reqHoursInput" class="form-control" min="1" max="20" value="4" required />
+              </div>
+              <div class="form-group req-form-btn">
+                <button type="submit" class="btn btn-primary" id="btnSaveRequirement">+ Guardar</button>
+                <button type="button" class="btn btn-outline hidden" id="btnCancelReqEdit">Cancelar</button>
+              </div>
+            </div>
+          </form>
+
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Sigla</th>
+                  <th>Asignatura</th>
+                  <th>Profesor Encargado</th>
+                  <th>Hrs Plan de Estudio</th>
+                  <th>Hrs en Calendario</th>
+                  <th>Estado</th>
+                  <th class="no-print">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="requirementsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 6: CONFIGURACIÓN DE BLOQUES HORARIOS ==================== -->
+    <section id="tab-bloques" class="tab-panel">
+      <div class="management-grid">
+        <div class="card no-print">
+          <div class="card-header">
+            <h2>Agregar Bloque o Recreo</h2>
+          </div>
+          <form id="periodForm" class="card-body form-stack">
+            <div class="form-group">
+              <label for="periodLabelInput">Nombre del Bloque *</label>
+              <input type="text" id="periodLabelInput" class="form-control" placeholder="Ej: Bloque 9 o Recreo" required />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="periodStartInput">Hora Inicio (Lun-Jue) *</label>
+                <input type="time" id="periodStartInput" class="form-control" value="08:15" required />
+              </div>
+              <div class="form-group">
+                <label for="periodEndInput">Hora Término (Lun-Jue) *</label>
+                <input type="time" id="periodEndInput" class="form-control" value="09:00" required />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="periodTypeSelect">Tipo de Bloque</label>
+              <select id="periodTypeSelect" class="form-control">
+                <option value="class">📚 Bloque de Clases (Lunes a Viernes)</option>
+                <option value="class_mon_thu">📚 Bloque Tarde (Solo Lunes a Jueves, Viernes sin clases)</option>
+                <option value="break">☕ Recreo / Almuerzo (No asignable)</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">+ Agregar Bloque</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-header-flex">
+            <h2>Estructura Oficial de Bloques de la Jornada Escolar (38 Bloques Semanales)</h2>
+            <span class="badge-pill" id="totalWeeklySlotsBadge">38 bloques semanales</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Orden</th>
+                  <th>Bloque</th>
+                  <th>Horario Lunes a Jueves</th>
+                  <th>Horario Viernes</th>
+                  <th>Tipo</th>
+                  <th class="no-print">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="periodsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal para Asignación Rápida al hacer clic en una celda -->
+  <div id="cellAssignModal" class="modal-backdrop hidden no-print">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modalCellTitle">Asignar Bloque Horario</h3>
+        <button class="modal-close" id="btnCloseModal" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="modalCellSubtitle" class="helper-text"></p>
+        <div id="modalOptionsList" class="modal-options-list"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger-outline btn-sm hidden" id="btnModalClearCell" type="button">
+          🗑️ Quitar asignación actual
+        </button>
+        <button class="btn btn-outline btn-sm" id="btnModalCancel" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Ficha Detallada Profesor (Horas Lectivas / SEP / No Lectivas) -->
+  <div id="teacherDetailModal" class="modal-backdrop hidden no-print">
+    <div class="modal-dialog" style="max-width:680px;">
+      <div class="modal-header">
+        <h3 id="teacherDetailTitle">Ficha de Carga Horaria Docente</h3>
+        <button class="modal-close" id="btnCloseTeacherDetail" type="button">✕</button>
+      </div>
+      <div class="modal-body" id="teacherDetailBody"></div>
+      <div class="modal-footer">
+        <button class="btn btn-primary btn-sm" id="btnGoTeacherSchedule" type="button">🗓️ Ver Calendario del Profesor</button>
+        <button class="btn btn-outline btn-sm" id="btnCloseTeacherDetailFooter" type="button">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
