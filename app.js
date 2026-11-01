@@ -1,6 +1,6 @@
 /**
  * Sistema de Gestión de Horarios Escolares
- * Planificación Académica, Cursos (1º a 8º Básico), Sábana General y Carga Horaria Docente (65/35)
+ * Dirección y UTP — Planificación Académica, Cursos (1º a 8º Básico), Panorama General y Carga Docente (65/35)
  */
 
 const ACTIVE_YEAR_KEY = 'eduhorario_active_school_year_v3';
@@ -15,6 +15,7 @@ const DAYS = [
 ];
 
 let currentSchoolYear = '2026';
+let undoStack = [];
 
 // Estado global
 let state = {
@@ -33,14 +34,47 @@ let ui = {
   selectedPaletteReqId: null,
   activeViewTeacherId: null,
   availabilityEditMode: false,
-  modalTargetSlot: null
+  modalTargetSlot: null,
+  panoramaActiveDay: '0', // '0'..'4' o 'WEEK'
+  panoramaHighlightTeacherId: ''
 };
+
+/* ==========================================================================
+   HISTORIAL PARA DESHACER (UNDO)
+   ========================================================================== */
+function pushUndoSnapshot() {
+  undoStack.push(JSON.stringify(state));
+  if (undoStack.length > 25) {
+    undoStack.shift();
+  }
+  updateUndoButton();
+}
+
+function performUndo() {
+  if (undoStack.length === 0) return;
+  const previousJson = undoStack.pop();
+  try {
+    state = JSON.parse(previousJson);
+    saveState();
+    renderAll();
+    showToast('↩️ Se deshizo el último cambio.', 'info');
+  } catch (err) {
+    console.error('Error al deshacer:', err);
+  }
+  updateUndoButton();
+}
+
+function updateUndoButton() {
+  const btn = document.getElementById('btnUndo');
+  if (btn) {
+    btn.disabled = undoStack.length === 0;
+  }
+}
 
 /* ==========================================================================
    DATOS INSTITUCIONALES BASE (2026 COMPLETO / 2027 PLANTILLA DESDE CERO)
    ========================================================================== */
 function getInstitutionalBaseData(includeScheduleAssignments = true) {
-  // Estructura oficial de bloques de 1º a 8º Básico (38 bloques semanales: 8 Lun-Jue + 6 Vie)
   const periods = [
     { id: 'p1', num: 1, label: 'Bloque 1', start: '08:15', end: '09:00', friStart: '08:15', friEnd: '09:00', type: 'class' },
     { id: 'p2', num: 2, label: 'Bloque 2', start: '09:00', end: '09:45', friStart: '09:00', friEnd: '09:45', type: 'class' },
@@ -55,7 +89,6 @@ function getInstitutionalBaseData(includeScheduleAssignments = true) {
     { id: 'p8', num: 8, label: 'Bloque 8', start: '14:55', end: '15:40', friStart: '—', friEnd: '—', type: 'class_mon_thu' }
   ];
 
-  // Nómina docente institucional
   const teachers = [
     {
       id: 't_ml',
@@ -256,7 +289,6 @@ function getInstitutionalBaseData(includeScheduleAssignments = true) {
     }
   ];
 
-  // Cursos oficiales 1º a 8º Básico
   const courses = [
     { id: 'c1', short: '1º', name: '1º Año Básico' },
     { id: 'c2', short: '2º', name: '2º Año Básico' },
@@ -268,7 +300,6 @@ function getInstitutionalBaseData(includeScheduleAssignments = true) {
     { id: 'c8', short: '8º', name: '8º Año Básico' }
   ];
 
-  // Plan de Estudio oficial por curso (38 hrs semanales)
   const coursePlans = {
     c1: [
       { shortCode: 'LENG', subject: 'LENGUAJE Y COMUNICACIÓN', teacherId: 't_ml', hoursPerWeek: 8 },
@@ -406,7 +437,6 @@ function getInstitutionalBaseData(includeScheduleAssignments = true) {
   const assignments = {};
 
   if (includeScheduleAssignments) {
-    // Horario 2026 completo (Lunes 8, Martes 8, Miércoles 8, Jueves 8, Viernes 6)
     const initialSchedules = {
       c1: [
         ['MAT', 'MAT', 'LENG', 'LENG', 'EF', 'EF', 'CN', 'CN'],
@@ -516,6 +546,9 @@ function loadState(year = null) {
       currentSchoolYear = localStorage.getItem(ACTIVE_YEAR_KEY) || '2026';
     }
 
+    undoStack = [];
+    updateUndoButton();
+
     const selectYearEl = document.getElementById('selectSchoolYear');
     if (selectYearEl) {
       selectYearEl.value = currentSchoolYear;
@@ -540,7 +573,6 @@ function loadState(year = null) {
     console.error('Error al cargar almacenamiento local:', err);
   }
 
-  // Si es 2026 carga el horario completo; si es 2027 carga la estructura limpia desde cero
   const includeAssignments = currentSchoolYear === '2026';
   state = getInstitutionalBaseData(includeAssignments);
   saveState();
@@ -683,6 +715,89 @@ function scanAllConflicts() {
   return conflicts;
 }
 
+/**
+ * Intercambia (hace enroque) o mueve un bloque ya asignado hacia otro bloque del mismo curso.
+ */
+function swapOrMoveSlotsInCourse(courseId, fromDay, fromPeriodId, toDay, toPeriodId) {
+  if (Number(fromDay) === Number(toDay) && fromPeriodId === toPeriodId) return false;
+
+  const targetPeriod = state.periods.find((p) => p.id === toPeriodId);
+  if (isPeriodDisabledOnDay(targetPeriod, toDay)) {
+    showToast('No se puede mover a un bloque inhabilitado.', 'warn');
+    return false;
+  }
+
+  const fromKey = slotKey(courseId, fromDay, fromPeriodId);
+  const toKey = slotKey(courseId, toDay, toPeriodId);
+  const fromAssign = state.assignments[fromKey];
+  const toAssign = state.assignments[toKey];
+
+  if (!fromAssign) return false;
+
+  const teacherA = state.teachers.find((t) => t.id === fromAssign.teacherId);
+
+  // Validar si teacherA puede ir a (toDay, toPeriodId)
+  if (isTeacherUnavailable(fromAssign.teacherId, toDay, toPeriodId)) {
+    showToast(`🚫 ${teacherA ? teacherA.name : 'El profesor'} no está disponible en el bloque de destino.`, 'error');
+    return false;
+  }
+  const conflictA = findTeacherConflict(fromAssign.teacherId, toDay, toPeriodId, courseId);
+  if (conflictA) {
+    const otherCourse = state.courses.find((c) => c.id === conflictA.courseId);
+    showToast(
+      `⚠️ No se puede mover: ${teacherA ? teacherA.name : ''} (${teacherA ? teacherA.initials : ''}) ya está en ${
+        otherCourse ? otherCourse.name : 'otro curso'
+      } en esa hora.`,
+      'error'
+    );
+    return false;
+  }
+
+  // Si la celda destino tiene una clase (Enroque / Swap), validar que teacherB pueda ir a (fromDay, fromPeriodId)
+  if (toAssign) {
+    const teacherB = state.teachers.find((t) => t.id === toAssign.teacherId);
+    if (isTeacherUnavailable(toAssign.teacherId, fromDay, fromPeriodId)) {
+      showToast(`🚫 No se puede intercambiar: ${teacherB ? teacherB.name : ''} no está disponible en el bloque original.`, 'error');
+      return false;
+    }
+    const conflictB = findTeacherConflict(toAssign.teacherId, fromDay, fromPeriodId, courseId);
+    if (conflictB) {
+      const otherCourse = state.courses.find((c) => c.id === conflictB.courseId);
+      showToast(
+        `⚠️ No se puede intercambiar: ${teacherB ? teacherB.name : ''} (${teacherB ? teacherB.initials : ''}) ya está en ${
+          otherCourse ? otherCourse.name : 'otro curso'
+        } en el bloque original.`,
+        'error'
+      );
+      return false;
+    }
+  }
+
+  pushUndoSnapshot();
+
+  // Realizar el movimiento o intercambio
+  state.assignments[toKey] = {
+    ...fromAssign,
+    dayIndex: Number(toDay),
+    periodId: toPeriodId
+  };
+
+  if (toAssign) {
+    state.assignments[fromKey] = {
+      ...toAssign,
+      dayIndex: Number(fromDay),
+      periodId: fromPeriodId
+    };
+    showToast('🔄 Bloques intercambiados correctamente (sin topones).', 'success');
+  } else {
+    delete state.assignments[fromKey];
+    showToast('➡️ Bloque movido correctamente.', 'info');
+  }
+
+  saveState();
+  return true;
+}
+
 function assignRequirementToSlot(courseId, dayIndex, periodId, reqId, silent = false) {
   const period = state.periods.find((p) => p.id === periodId);
   if (!period || period.type === 'break') {
@@ -711,7 +826,6 @@ function assignRequirementToSlot(courseId, dayIndex, periodId, reqId, silent = f
     return true;
   }
 
-  // 1. Disponibilidad del profesor
   if (isTeacherUnavailable(teacher.id, dayIndex, periodId)) {
     if (!silent) {
       const dayName = DAYS[dayIndex]?.name || '';
@@ -723,7 +837,6 @@ function assignRequirementToSlot(courseId, dayIndex, periodId, reqId, silent = f
     return false;
   }
 
-  // 2. Topón con otro curso a la misma hora
   const conflict = findTeacherConflict(teacher.id, dayIndex, periodId, courseId);
   if (conflict) {
     if (!silent) {
@@ -737,7 +850,6 @@ function assignRequirementToSlot(courseId, dayIndex, periodId, reqId, silent = f
     return false;
   }
 
-  // 3. Límite de horas semanales del ramo en el curso
   const currentReqHours = getAssignedHoursForRequirement(req.id, targetKey);
   if (currentReqHours >= req.hoursPerWeek) {
     if (!silent) {
@@ -749,7 +861,6 @@ function assignRequirementToSlot(courseId, dayIndex, periodId, reqId, silent = f
     return false;
   }
 
-  // 4. Límite de horas lectivas del profesor
   if (!teacher.isMultiCourseWorkshop) {
     const currentTeacherHours = getAssignedHoursForTeacher(teacher.id, targetKey);
     if (currentTeacherHours >= teacher.maxHours) {
@@ -762,6 +873,8 @@ function assignRequirementToSlot(courseId, dayIndex, periodId, reqId, silent = f
       return false;
     }
   }
+
+  if (!silent) pushUndoSnapshot();
 
   state.assignments[targetKey] = {
     courseId,
@@ -780,6 +893,7 @@ function assignRequirementToSlot(courseId, dayIndex, periodId, reqId, silent = f
 function removeSlotAssignment(courseId, dayIndex, periodId) {
   const key = slotKey(courseId, dayIndex, periodId);
   if (state.assignments[key]) {
+    pushUndoSnapshot();
     delete state.assignments[key];
     saveState();
     return true;
@@ -791,6 +905,8 @@ function removeSlotAssignment(courseId, dayIndex, periodId) {
    AUTOCOMPLETADO INTELIGENTE DE HORARIOS (SIN TOPONES)
    ========================================================================== */
 function autoScheduleForCourse(courseId, notify = true) {
+  if (notify) pushUndoSnapshot();
+
   const classPeriods = state.periods.filter((p) => p.type !== 'break');
   const courseReqs = state.requirements.filter((r) => r.courseId === courseId);
 
@@ -889,6 +1005,7 @@ function autoScheduleForCourse(courseId, notify = true) {
 }
 
 function autoScheduleAllCourses() {
+  pushUndoSnapshot();
   let totalAdded = 0;
   let totalPending = 0;
   state.courses.forEach((course) => {
@@ -932,7 +1049,7 @@ function renderAll() {
   ensureValidSelections();
   updateGlobalCounters();
   renderSchedulerTab();
-  renderSabanaResumenTab();
+  renderPanoramaGeneralTab();
   renderTeacherViewTab();
   renderTeachersManagementTab();
   renderCoursesManagementTab();
@@ -1047,7 +1164,7 @@ function renderSchedulerTab() {
     });
 
     btn.addEventListener('dragstart', (e) => {
-      e.dataTransfer.setData('text/plain', req.id);
+      e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'PALETTE_REQ', reqId: req.id }));
       ui.selectedPaletteReqId = req.id;
       setTimeout(() => renderCourseCalendarGrid(), 10);
     });
@@ -1067,7 +1184,7 @@ function renderSchedulerTab() {
       ? `📌 Asignando: ${selReq.subject} — ${selTeacher ? `${selTeacher.name} (${selTeacher.initials})` : ''} (Los bloques donde ya hace clases en otro curso aparecen bloqueados en rojo).`
       : '';
   } else {
-    hintEl.textContent = '💡 Haz clic en una asignatura a la izquierda para ver disponibilidad y asignar, o haz clic directo en una celda.';
+    hintEl.textContent = '💡 Haz clic en una asignatura a la izquierda, haz clic en una celda o arrastra un bloque sobre otro para intercambiarlos.';
   }
 
   renderCourseCalendarGrid();
@@ -1158,13 +1275,27 @@ function renderCourseCalendarGrid() {
             : '';
 
         td.innerHTML = `
-          <div class="assigned-block" style="border-left-color:${color}; background:${bg}">
+          <div class="assigned-block" draggable="true" title="Arrastra hacia otro bloque para mover o intercambiar" style="border-left-color:${color}; background:${bg}">
             <button type="button" class="block-remove-btn no-print" title="Quitar bloque">✕</button>
             <div class="block-subject">${escapeHtml(currentAssignment.subject)}</div>
             <div class="block-teacher">👨‍🏫 ${assignedTeacher ? `${escapeHtml(assignedTeacher.name)} (${escapeHtml(initials)})` : ''}</div>
             ${conflictHint}
           </div>
         `;
+
+        const blockEl = td.querySelector('.assigned-block');
+        blockEl.addEventListener('dragstart', (e) => {
+          e.stopPropagation();
+          e.dataTransfer.setData(
+            'text/plain',
+            JSON.stringify({
+              type: 'SWAP_SLOT',
+              courseId: ui.activeCourseId,
+              fromDay: day.index,
+              fromPeriodId: period.id
+            })
+          );
+        });
 
         td.querySelector('.block-remove-btn').addEventListener('click', (e) => {
           e.stopPropagation();
@@ -1208,9 +1339,30 @@ function renderCourseCalendarGrid() {
       td.addEventListener('drop', (e) => {
         e.preventDefault();
         td.classList.remove('drag-over');
-        const droppedReqId = e.dataTransfer.getData('text/plain');
-        if (droppedReqId) {
-          assignRequirementToSlot(ui.activeCourseId, day.index, period.id, droppedReqId, false);
+        const rawData = e.dataTransfer.getData('text/plain');
+        if (!rawData) return;
+
+        try {
+          const payload = JSON.parse(rawData);
+          if (payload.type === 'PALETTE_REQ' && payload.reqId) {
+            assignRequirementToSlot(ui.activeCourseId, day.index, period.id, payload.reqId, false);
+            renderAll();
+          } else if (payload.type === 'SWAP_SLOT') {
+            if (
+              swapOrMoveSlotsInCourse(
+                payload.courseId,
+                payload.fromDay,
+                payload.fromPeriodId,
+                day.index,
+                period.id
+              )
+            ) {
+              renderAll();
+            }
+          }
+        } catch {
+          // Compatibilidad texto plano simple
+          assignRequirementToSlot(ui.activeCourseId, day.index, period.id, rawData, false);
           renderAll();
         }
       });
@@ -1318,13 +1470,199 @@ function closeQuickAssignModal() {
 }
 
 /* --------------------------------------------------------------------------
-   TAB 2: SÁBANA GENERAL DE HORARIOS
+   TAB 2: PANORAMA GENERAL REDISEÑADO (LIMPIO, EJECUTIVO Y ORDENADO)
    -------------------------------------------------------------------------- */
-function renderSabanaResumenTab() {
-  const subjectsContainer = document.getElementById('sabanaSubjectsContainer');
-  const teachersContainer = document.getElementById('sabanaTeachersContainer');
-  const conflictSummary = document.getElementById('sabanaConflictSummary');
+function renderPanoramaGeneralTab() {
+  const kpiContainer = document.getElementById('overviewCourseCards');
+  const contentContainer = document.getElementById('panoramaContentContainer');
+  const highlightSelect = document.getElementById('selectHighlightTeacher');
 
+  // 1. Poblar tarjetas ejecutivas de avance por curso (1º a 8º)
+  kpiContainer.innerHTML = '';
+  state.courses.forEach((course) => {
+    const reqs = state.requirements.filter((r) => r.courseId === course.id);
+    const reqHours = reqs.reduce((acc, r) => acc + Number(r.hoursPerWeek), 0);
+    const asgHours = reqs.reduce((acc, r) => acc + getAssignedHoursForRequirement(r.id), 0);
+    const pct = reqHours > 0 ? Math.min(100, Math.round((asgHours / reqHours) * 100)) : 0;
+
+    const card = document.createElement('div');
+    card.className = 'kpi-course-card';
+    card.title = `Ir al horario de ${course.name}`;
+    card.innerHTML = `
+      <div class="kpi-course-top">
+        <span>🏫 ${escapeHtml(course.short || course.name)}</span>
+        <span style="color:${pct === 100 ? '#16a34a' : '#2563eb'}">${pct}%</span>
+      </div>
+      <div class="kpi-course-sub">${asgHours} / ${reqHours} hrs asignadas</div>
+      <div class="progress-bar-track" style="height:6px; margin-top:0.35rem;">
+        <div class="progress-bar-fill ${pct === 100 ? 'complete' : ''}" style="width:${pct}%"></div>
+      </div>
+    `;
+    card.addEventListener('click', () => {
+      ui.activeCourseId = course.id;
+      switchTab('tab-calendario');
+      renderAll();
+    });
+    kpiContainer.appendChild(card);
+  });
+
+  // 2. Poblar selector de "Destacar Profesor"
+  const prevHighlight = ui.panoramaHighlightTeacherId;
+  highlightSelect.innerHTML = `<option value="">Mostrar todos por igual</option>`;
+  state.teachers.forEach((t) => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = `[${t.initials}] ${t.name}`;
+    if (t.id === prevHighlight) opt.selected = true;
+    highlightSelect.appendChild(opt);
+  });
+
+  // 3. Actualizar estado visual de los botones de Día
+  document.querySelectorAll('#panoramaDayButtons .seg-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.day === String(ui.panoramaActiveDay));
+  });
+
+  if (ui.panoramaActiveDay === 'WEEK') {
+    renderUnifiedWeeklySabana(contentContainer);
+  } else {
+    renderSingleDayPanoramaTable(contentContainer, Number(ui.panoramaActiveDay));
+  }
+}
+
+/**
+ * Vista por Día (Lunes a Viernes): 8 cursos en paralelo, celdas grandes con Asignatura + Profesor y columna de Control de Topones
+ */
+function renderSingleDayPanoramaTable(container, dayIndex) {
+  const dayObj = DAYS[dayIndex] || DAYS[0];
+  document.getElementById('panoramaMainTitle').textContent = `Panorama del Día ${dayObj.name} — Todos los Cursos (${currentSchoolYear})`;
+
+  const highlightTeacherId = ui.panoramaHighlightTeacherId;
+
+  let html = `
+    <table class="panorama-day-table">
+      <thead>
+        <tr>
+          <th style="width:135px;">Bloque / Hora</th>
+          ${state.courses.map((c) => `<th>🏫 ${escapeHtml(c.name)}</th>`).join('')}
+          <th style="width:120px;">Control Topones</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  state.periods.forEach((period) => {
+    if (period.type === 'break') {
+      html += `
+        <tr class="break-row">
+          <td>${escapeHtml(period.start)} - ${escapeHtml(period.end)}</td>
+          <td colspan="${state.courses.length + 1}">☕ ${escapeHtml(period.label)}</td>
+        </tr>
+      `;
+      return;
+    }
+
+    if (isPeriodDisabledOnDay(period, dayIndex)) {
+      html += `
+        <tr class="break-row">
+          <td>${escapeHtml(period.start)} - ${escapeHtml(period.end)}</td>
+          <td colspan="${state.courses.length + 1}">Salida Viernes 14:00 hrs</td>
+        </tr>
+      `;
+      return;
+    }
+
+    // Contar profesores en esta fila (mismo día y bloque) para detectar si alguno se repite
+    const teacherCountsInRow = {};
+    state.courses.forEach((course) => {
+      const a = state.assignments[slotKey(course.id, dayIndex, period.id)];
+      if (!a) return;
+      const t = state.teachers.find((x) => x.id === a.teacherId);
+      if (t && t.isMultiCourseWorkshop) return;
+      teacherCountsInRow[a.teacherId] = (teacherCountsInRow[a.teacherId] || 0) + 1;
+    });
+
+    const hasConflictInRow = Object.values(teacherCountsInRow).some((cnt) => cnt > 1);
+
+    html += `
+      <tr>
+        <td class="time-cell">
+          <div class="period-name">${escapeHtml(period.label)}</div>
+          <div class="period-hours">${escapeHtml(period.start)} - ${escapeHtml(period.end)}</div>
+        </td>
+    `;
+
+    state.courses.forEach((course) => {
+      const a = state.assignments[slotKey(course.id, dayIndex, period.id)];
+      if (a) {
+        const teacher = state.teachers.find((t) => t.id === a.teacherId);
+        const color = teacher ? teacher.color : '#2563eb';
+        const bg = hexToRgba(color, 0.15);
+        const isDuplicated = teacherCountsInRow[a.teacherId] > 1;
+
+        let highlightClass = '';
+        if (highlightTeacherId) {
+          highlightClass = a.teacherId === highlightTeacherId ? 'highlighted-slot' : 'dimmed-slot';
+        }
+
+        html += `
+          <td>
+            <div class="panorama-cell-card ${highlightClass} ${isDuplicated ? 'sabana-cell-conflict' : ''}"
+                 data-course="${course.id}" data-day="${dayIndex}" data-period="${period.id}"
+                 style="border-left-color:${color}; background:${bg}"
+                 title="Haz clic para cambiar esta asignatura en ${escapeHtml(course.name)}">
+              <div class="panorama-cell-subj">${escapeHtml(a.subject)}</div>
+              <div class="panorama-cell-teacher">
+                <span class="teacher-initials-badge" style="background:${color}; min-width:24px; height:18px; font-size:0.66rem;">
+                  ${teacher ? escapeHtml(teacher.initials) : ''}
+                </span>
+                <span>${teacher ? escapeHtml(teacher.name) : ''}</span>
+              </div>
+            </div>
+          </td>
+        `;
+      } else {
+        const dimEmpty = highlightTeacherId ? 'dimmed-slot' : '';
+        html += `
+          <td>
+            <div class="empty-slot-placeholder ${dimEmpty}"
+                 data-course="${course.id}" data-day="${dayIndex}" data-period="${period.id}"
+                 style="height:54px; border:1px dashed #cbd5e1; border-radius:6px; cursor:pointer;"
+                 title="Haz clic para asignar bloque en ${escapeHtml(course.name)}">
+              + Asignar
+            </div>
+          </td>
+        `;
+      }
+    });
+
+    html += `
+        <td style="text-align:center;">
+          <span class="badge-pill ${hasConflictInRow ? 'badge-danger' : 'badge-ok'}">
+            ${hasConflictInRow ? '⛔ Topón' : '✅ Sin topón'}
+          </span>
+        </td>
+      </tr>
+    `;
+  });
+
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+
+  // Hacer cada celda interactiva al hacer clic
+  container.querySelectorAll('[data-course][data-day][data-period]').forEach((el) => {
+    el.addEventListener('click', () => {
+      openQuickAssignModal(el.dataset.course, Number(el.dataset.day), el.dataset.period);
+    });
+  });
+}
+
+/**
+ * Vista Semana Compacta Unificada: Una sola matriz limpia donde cada celda muestra Asignatura + Sigla Profesor juntos
+ */
+function renderUnifiedWeeklySabana(container) {
+  document.getElementById('panoramaMainTitle').textContent = `Matriz Semanal Compacta (38 Bloques) — Todos los Cursos (${currentSchoolYear})`;
+
+  const highlightTeacherId = ui.panoramaHighlightTeacherId;
   const classPeriods = state.periods.filter((p) => p.type !== 'break');
 
   const columns = [];
@@ -1353,68 +1691,64 @@ function renderSabanaResumenTab() {
     });
   });
 
-  function buildHeaderHtml() {
-    let h1 = `<tr><th class="day-group-header">CURSO</th>`;
-    DAYS.forEach((day) => {
-      const count = classPeriods.filter((p) => !isPeriodDisabledOnDay(p, day.index)).length;
-      h1 += `<th colspan="${count}" class="day-group-header">${day.name.toUpperCase()}</th>`;
-    });
-    h1 += `<th>TOTAL</th></tr>`;
-
-    let h2 = `<tr><th class="block-num-header">#</th>`;
-    columns.forEach((col) => {
-      h2 += `<th class="block-num-header ${col.isLastOfDay ? 'day-end-border' : ''}">${col.blockNum}</th>`;
-    });
-    h2 += `<th class="block-num-header">HRS</th></tr>`;
-    return `<thead>${h1}${h2}</thead>`;
-  }
-
-  let t1Body = `<tbody>`;
-  state.courses.forEach((course) => {
-    let countAssigned = 0;
-    t1Body += `<tr><td class="course-row-header">${escapeHtml(course.short || course.name)}</td>`;
-    columns.forEach((col) => {
-      const a = state.assignments[slotKey(course.id, col.dayIndex, col.periodId)];
-      const teacher = a ? state.teachers.find((t) => t.id === a.teacherId) : null;
-      const bg = teacher ? hexToRgba(teacher.color, 0.15) : 'transparent';
-      if (a) countAssigned++;
-      t1Body += `<td class="${col.isLastOfDay ? 'day-end-border' : ''}" style="background:${bg}; font-weight:700;" title="${
-        a ? `${escapeHtml(course.name)} - ${escapeHtml(a.subject)} (${teacher ? escapeHtml(teacher.name) : ''})` : 'Libre'
-      }">${a ? escapeHtml(a.shortCode || a.subject.slice(0, 4)) : ''}</td>`;
-    });
-    t1Body += `<td><strong>${countAssigned}</strong></td></tr>`;
+  let h1 = `<tr><th class="day-group-header">CURSO</th>`;
+  DAYS.forEach((day) => {
+    const count = classPeriods.filter((p) => !isPeriodDisabledOnDay(p, day.index)).length;
+    h1 += `<th colspan="${count}" class="day-group-header">${day.name.toUpperCase()}</th>`;
   });
-  t1Body += `</tbody>`;
-  subjectsContainer.innerHTML = `<table class="sabana-table">${buildHeaderHtml()}${t1Body}</table>`;
+  h1 += `<th class="day-group-header">TOTAL</th></tr>`;
 
-  let t2Body = `<tbody>`;
+  let h2 = `<tr><th class="block-num-header">Bloque</th>`;
+  columns.forEach((col) => {
+    h2 += `<th class="block-num-header ${col.isLastOfDay ? 'day-end-border' : ''}">${col.blockNum}</th>`;
+  });
+  h2 += `<th class="block-num-header">HRS</th></tr>`;
+
+  let body = `<tbody>`;
   state.courses.forEach((course) => {
     let countAssigned = 0;
-    t2Body += `<tr><td class="course-row-header">${escapeHtml(course.short || course.name)}</td>`;
+    body += `<tr><td class="course-row-header">${escapeHtml(course.short || course.name)}</td>`;
     columns.forEach((col, colIdx) => {
       const a = state.assignments[slotKey(course.id, col.dayIndex, col.periodId)];
       const teacher = a ? state.teachers.find((t) => t.id === a.teacherId) : null;
-      const initials = teacher ? teacher.initials : '';
-      const isConflict = a && columnTeacherCounts[colIdx][a.teacherId] > 1;
       const bg = teacher ? hexToRgba(teacher.color, 0.18) : 'transparent';
+      const isConflict = a && columnTeacherCounts[colIdx][a.teacherId] > 1;
       if (a) countAssigned++;
 
-      t2Body += `<td class="${col.isLastOfDay ? 'day-end-border' : ''} ${
-        isConflict ? 'sabana-cell-conflict' : ''
-      }" style="background:${bg}; font-weight:700;" title="${
-        teacher ? `${escapeHtml(teacher.name)} (${escapeHtml(a.subject)})` : 'Libre'
-      }">${escapeHtml(initials)}</td>`;
-    });
-    t2Body += `<td><strong>${countAssigned}</strong></td></tr>`;
-  });
-  t2Body += `</tbody>`;
-  teachersContainer.innerHTML = `<table class="sabana-table">${buildHeaderHtml()}${t2Body}</table>`;
+      let highlightClass = '';
+      if (highlightTeacherId && a) {
+        highlightClass = a.teacherId === highlightTeacherId ? 'highlighted-slot' : 'dimmed-slot';
+      } else if (highlightTeacherId && !a) {
+        highlightClass = 'dimmed-slot';
+      }
 
-  const allConflicts = scanAllConflicts();
-  conflictSummary.innerHTML =
-    allConflicts.length === 0
-      ? `<span class="badge-pill badge-ok">✅ Verificado (${currentSchoolYear}): 0 topones en los 38 bloques semanales</span>`
-      : `<span class="badge-pill badge-danger">⚠️ ${allConflicts.length} topón(es) detectados en la sábana</span>`;
+      body += `
+        <td class="${col.isLastOfDay ? 'day-end-border' : ''} ${isConflict ? 'sabana-cell-conflict' : ''}"
+            style="background:${bg};"
+            data-course="${course.id}" data-day="${col.dayIndex}" data-period="${col.periodId}"
+            title="${a ? `${escapeHtml(course.name)} — ${escapeHtml(a.subject)} (${teacher ? escapeHtml(teacher.name) : ''})` : 'Libre (Clic para asignar)'}">
+          ${
+            a
+              ? `<div class="sabana-unified-cell ${highlightClass}">
+                   <span class="sabana-unified-subj">${escapeHtml(a.shortCode || a.subject.slice(0, 4))}</span>
+                   <span class="sabana-unified-prof">${teacher ? escapeHtml(teacher.initials) : ''}</span>
+                 </div>`
+              : `<div class="sabana-unified-cell ${highlightClass}" style="color:#cbd5e1;">—</div>`
+          }
+        </td>
+      `;
+    });
+    body += `<td><strong>${countAssigned}/38</strong></td></tr>`;
+  });
+  body += `</tbody>`;
+
+  container.innerHTML = `<table class="sabana-table"><thead>${h1}${h2}</thead>${body}</table>`;
+
+  container.querySelectorAll('[data-course][data-day][data-period]').forEach((el) => {
+    el.addEventListener('click', () => {
+      openQuickAssignModal(el.dataset.course, Number(el.dataset.day), el.dataset.period);
+    });
+  });
 }
 
 /* --------------------------------------------------------------------------
@@ -1499,7 +1833,7 @@ function renderTeacherViewTab() {
           .join(', ');
         const firstSubj = slots[0].shortCode || slots[0].subject;
         td.innerHTML = `
-          <div class="assigned-block" style="border-left-color:${teacher.color}; background:${bg}">
+          <div class="assigned-block" style="border-left-color:${teacher.color}; background:${bg}; cursor:default;">
             <div class="block-subject">${escapeHtml(firstSubj)} (${escapeHtml(coursesNames)})</div>
             <div class="block-teacher">🏫 Curso: ${escapeHtml(coursesNames)}</div>
           </div>
@@ -1525,6 +1859,7 @@ function renderTeacherViewTab() {
           showToast('Este bloque tiene una clase asignada. Quita la clase primero si deseas bloquearlo.', 'warn');
           return;
         }
+        pushUndoSnapshot();
         const uKey = unavailableKey(teacher.id, day.index, period.id);
         if (state.teacherUnavailable[uKey]) {
           delete state.teacherUnavailable[uKey];
@@ -1630,6 +1965,7 @@ function renderTeachersManagementTab() {
 
     tr.querySelector('.btn-del-t').addEventListener('click', () => {
       if (!confirm(`¿Eliminar a ${t.name}?`)) return;
+      pushUndoSnapshot();
       state.teachers = state.teachers.filter((x) => x.id !== t.id);
       state.requirements = state.requirements.filter((r) => r.teacherId !== t.id);
       for (const k in state.assignments) {
@@ -1764,6 +2100,7 @@ function renderCoursesManagementTab() {
     item.querySelector('.btn-del-course').addEventListener('click', (e) => {
       e.stopPropagation();
       if (!confirm(`¿Eliminar el curso "${course.name}" y su horario?`)) return;
+      pushUndoSnapshot();
       state.courses = state.courses.filter((c) => c.id !== course.id);
       state.requirements = state.requirements.filter((r) => r.courseId !== course.id);
       for (const k in state.assignments) {
@@ -1854,6 +2191,7 @@ function renderCoursesManagementTab() {
     });
 
     tr.querySelector('.btn-del-req').addEventListener('click', () => {
+      pushUndoSnapshot();
       state.requirements = state.requirements.filter((x) => x.id !== r.id);
       for (const k in state.assignments) {
         if (state.assignments[k].reqId === r.id) delete state.assignments[k];
@@ -1907,6 +2245,7 @@ function renderPeriodsTab() {
 
     tr.querySelector('.btn-up').addEventListener('click', () => {
       if (idx === 0) return;
+      pushUndoSnapshot();
       const tmp = state.periods[idx - 1];
       state.periods[idx - 1] = state.periods[idx];
       state.periods[idx] = tmp;
@@ -1916,6 +2255,7 @@ function renderPeriodsTab() {
 
     tr.querySelector('.btn-down').addEventListener('click', () => {
       if (idx === state.periods.length - 1) return;
+      pushUndoSnapshot();
       const tmp = state.periods[idx + 1];
       state.periods[idx + 1] = state.periods[idx];
       state.periods[idx] = tmp;
@@ -1925,6 +2265,7 @@ function renderPeriodsTab() {
 
     tr.querySelector('.btn-del-p').addEventListener('click', () => {
       if (!confirm(`¿Eliminar el bloque "${p.label}"?`)) return;
+      pushUndoSnapshot();
       state.periods = state.periods.filter((x) => x.id !== p.id);
       for (const k in state.assignments) {
         if (state.assignments[k].periodId === p.id) delete state.assignments[k];
@@ -2005,6 +2346,7 @@ function importFromJSON(file) {
         showToast('El archivo de respaldo no tiene un formato válido.', 'error');
         return;
       }
+      pushUndoSnapshot();
       state = {
         teachers: parsed.teachers || [],
         courses: parsed.courses || [],
@@ -2051,6 +2393,9 @@ function initEventListeners() {
     });
   });
 
+  // Botón Deshacer
+  document.getElementById('btnUndo').addEventListener('click', performUndo);
+
   // Selector de Año Escolar (2026 / 2027)
   document.getElementById('selectSchoolYear').addEventListener('change', (e) => {
     const selectedYear = e.target.value;
@@ -2090,6 +2435,7 @@ function initEventListeners() {
     if (!ui.activeCourseId) return;
     const course = state.courses.find((c) => c.id === ui.activeCourseId);
     if (!confirm(`¿Vaciar todos los bloques de ${course ? course.name : 'este curso'}?`)) return;
+    pushUndoSnapshot();
     for (const k in state.assignments) {
       if (state.assignments[k].courseId === ui.activeCourseId) {
         delete state.assignments[k];
@@ -2102,10 +2448,24 @@ function initEventListeners() {
 
   document.getElementById('btnClearAllSchedules').addEventListener('click', () => {
     if (!confirm(`¿Vaciar los horarios de TODOS los cursos (1º a 8º) del año ${currentSchoolYear} para armarlos desde cero? (Se mantendrán los profesores y planes de estudio).`)) return;
+    pushUndoSnapshot();
     state.assignments = {};
     saveState();
     renderAll();
     showToast(`Horarios ${currentSchoolYear} vaciados. Puedes asignar manual o automáticamente.`, 'info');
+  });
+
+  // Controles del Panorama General
+  document.querySelectorAll('#panoramaDayButtons .seg-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      ui.panoramaActiveDay = btn.dataset.day;
+      renderPanoramaGeneralTab();
+    });
+  });
+
+  document.getElementById('selectHighlightTeacher').addEventListener('change', (e) => {
+    ui.panoramaHighlightTeacherId = e.target.value;
+    renderPanoramaGeneralTab();
   });
 
   document.getElementById('selectViewTeacher').addEventListener('change', (e) => {
@@ -2137,6 +2497,8 @@ function initEventListeners() {
     const color = document.getElementById('teacherColorInput').value || '#2563eb';
 
     if (!name || !initials) return;
+
+    pushUndoSnapshot();
 
     if (id) {
       const idx = state.teachers.findIndex((t) => t.id === id);
@@ -2185,6 +2547,7 @@ function initEventListeners() {
     const nameInput = document.getElementById('courseNameInput');
     const name = nameInput.value.trim();
     if (!name) return;
+    pushUndoSnapshot();
     const newCourse = { id: uid('c'), short: name.slice(0, 3), name };
     state.courses.push(newCourse);
     ui.selectedPlanCourseId = newCourse.id;
@@ -2205,6 +2568,8 @@ function initEventListeners() {
     const hoursPerWeek = Number(document.getElementById('reqHoursInput').value) || 2;
 
     if (!subject || !teacherId) return;
+
+    pushUndoSnapshot();
 
     if (reqId) {
       const idx = state.requirements.findIndex((r) => r.id === reqId);
@@ -2252,6 +2617,7 @@ function initEventListeners() {
     const type = document.getElementById('periodTypeSelect').value;
     if (!label || !start || !end) return;
 
+    pushUndoSnapshot();
     state.periods.push({
       id: uid('p'),
       label,
@@ -2294,6 +2660,7 @@ function initEventListeners() {
       ? '¿Restaurar la programación base oficial del año 2026?'
       : `¿Reiniciar la plantilla del año ${currentSchoolYear} en blanco conservando cursos y plan de estudios base?`;
     if (!confirm(msg)) return;
+    pushUndoSnapshot();
     state = getInstitutionalBaseData(is2026);
     saveState();
     renderAll();

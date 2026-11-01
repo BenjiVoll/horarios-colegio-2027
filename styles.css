@@ -78,7 +78,7 @@ body {
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
   flex-wrap: wrap;
 }
 
@@ -113,7 +113,7 @@ body {
   border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 600;
-  margin-right: 0.25rem;
+  margin-right: 0.15rem;
 }
 
 .conflict-badge .dot {
@@ -146,8 +146,8 @@ body {
   background: transparent;
   border: none;
   border-bottom: 3px solid transparent;
-  padding: 0.85rem 1rem;
-  font-size: 0.87rem;
+  padding: 0.85rem 0.95rem;
+  font-size: 0.86rem;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
@@ -164,6 +164,11 @@ body {
   color: var(--primary);
   border-bottom-color: var(--primary);
   background: var(--primary-light);
+}
+
+.nav-tab-help {
+  margin-left: auto;
+  color: #4f46e5;
 }
 
 /* Contenedor Principal */
@@ -273,6 +278,11 @@ body {
   text-decoration: none;
 }
 
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .btn-sm {
   padding: 0.38rem 0.72rem;
   font-size: 0.79rem;
@@ -292,7 +302,7 @@ body {
   color: #ffffff;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background: var(--primary-hover);
 }
 
@@ -301,7 +311,7 @@ body {
   color: #ffffff;
 }
 
-.btn-accent:hover {
+.btn-accent:hover:not(:disabled) {
   background: var(--accent-hover);
 }
 
@@ -311,7 +321,7 @@ body {
   border-color: var(--border-strong);
 }
 
-.btn-outline:hover {
+.btn-outline:hover:not(:disabled) {
   background: var(--surface-alt);
 }
 
@@ -321,7 +331,7 @@ body {
   border-color: rgba(255, 255, 255, 0.22);
 }
 
-.topbar .btn-outline:hover {
+.topbar .btn-outline:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.18);
 }
 
@@ -331,7 +341,7 @@ body {
   border-color: #fca5a5;
 }
 
-.btn-danger-outline:hover {
+.btn-danger-outline:hover:not(:disabled) {
   background: var(--danger-bg);
 }
 
@@ -784,6 +794,7 @@ body {
   flex-direction: column;
   justify-content: space-between;
   position: relative;
+  cursor: grab;
 }
 
 .assigned-block .block-subject {
@@ -836,19 +847,185 @@ body {
   user-select: none;
 }
 
-/* SÁBANA RESUMEN ESTILO EXCEL */
+/* ==========================================================================
+   PANORAMA GENERAL REDISEÑADO (EJECUTIVO, LIMPIO Y ORDENADO)
+   ========================================================================== */
+.overview-kpis {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 1200px) {
+  .overview-kpis {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.kpi-course-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0.65rem 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: var(--shadow);
+}
+
+.kpi-course-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.kpi-course-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 800;
+  font-size: 0.88rem;
+}
+
+.kpi-course-sub {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.panorama-toolbar {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.panorama-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.day-Segmented-Control {
+  display: inline-flex;
+  background: #f1f5f9;
+  padding: 0.25rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  gap: 0.2rem;
+}
+
+.seg-btn {
+  border: none;
+  background: transparent;
+  padding: 0.42rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.seg-btn:hover {
+  color: var(--text);
+}
+
+.seg-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.highlight-teacher-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+/* Tabla Panorama por Día (8 cursos en columnas amplias) */
+.panorama-day-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  min-width: 980px;
+}
+
+.panorama-day-table th,
+.panorama-day-table td {
+  border: 1px solid var(--border);
+  padding: 0.4rem;
+  vertical-align: middle;
+}
+
+.panorama-day-table thead th {
+  background: #1e293b;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.65rem 0.4rem;
+  text-align: center;
+}
+
+.panorama-cell-card {
+  border-radius: 7px;
+  padding: 0.42rem 0.5rem;
+  border-left: 4px solid var(--primary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.15s ease;
+}
+
+.panorama-cell-card:hover {
+  transform: scale(1.01);
+}
+
+.panorama-cell-subj {
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: #0f172a;
+}
+
+.panorama-cell-teacher {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.dimmed-slot {
+  opacity: 0.22 !important;
+  filter: grayscale(70%);
+}
+
+.highlighted-slot {
+  box-shadow: 0 0 0 2px var(--primary), 0 4px 8px rgba(37, 99, 235, 0.18);
+  transform: scale(1.02);
+}
+
+/* Tabla Semana Compacta Unificada (Asignatura + Sigla Profesor en cada celda) */
 .sabana-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.73rem;
+  font-size: 0.72rem;
   text-align: center;
 }
 
 .sabana-table th,
 .sabana-table td {
   border: 1px solid #cbd5e1;
-  padding: 0.32rem 0.22rem;
-  min-width: 34px;
+  padding: 0.25rem 0.18rem;
+  min-width: 38px;
 }
 
 .sabana-table thead th.day-group-header {
@@ -858,6 +1035,7 @@ body {
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   border-right: 2px solid #0f172a;
+  padding: 0.45rem;
 }
 
 .sabana-table thead th.block-num-header {
@@ -873,7 +1051,7 @@ body {
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: 54px;
+  min-width: 56px;
 }
 
 .sabana-table td.day-end-border,
@@ -881,11 +1059,93 @@ body {
   border-right: 2.5px solid #334155;
 }
 
+.sabana-unified-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.1;
+  padding: 0.12rem 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sabana-unified-subj {
+  font-weight: 800;
+  font-size: 0.69rem;
+  color: #0f172a;
+}
+
+.sabana-unified-prof {
+  font-size: 0.63rem;
+  font-weight: 700;
+  color: #475569;
+}
+
 .sabana-cell-conflict {
   background: #fee2e2 !important;
   color: #991b1b !important;
-  font-weight: 800;
   box-shadow: inset 0 0 0 2px #dc2626;
+}
+
+/* ==========================================================================
+   MANUAL DE USUARIO (DIRECCIÓN Y UTP)
+   ========================================================================== */
+.manual-grid {
+  padding: 1.25rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.15rem;
+}
+
+@media (max-width: 980px) {
+  .manual-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.manual-section {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  position: relative;
+}
+
+.manual-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.manual-section h3 {
+  font-size: 0.98rem;
+  margin-bottom: 0.45rem;
+  color: #0f172a;
+}
+
+.manual-section p {
+  font-size: 0.84rem;
+  color: #334155;
+  margin-bottom: 0.5rem;
+}
+
+.manual-section ol,
+.manual-section ul {
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+  font-size: 0.83rem;
+  color: #334155;
 }
 
 /* Vista por Profesor */

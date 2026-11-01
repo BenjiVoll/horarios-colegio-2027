@@ -13,16 +13,16 @@
       <div class="brand-icon">🏫</div>
       <div>
         <h1>Sistema de Gestión de Horarios</h1>
-        <p class="subtitle">Planificación Académica, Cursos y Carga Horaria Docente (1º a 8º Básico)</p>
+        <p class="subtitle">Dirección y UTP — Planificación Académica y Control de Carga Docente (1º a 8º Básico)</p>
       </div>
     </div>
 
     <div class="topbar-actions">
       <!-- Selector de Año Escolar -->
       <div class="year-selector-box" title="Cambiar de Año Escolar (cada año guarda su propia planificación de forma independiente)">
-        <label for="selectSchoolYear">Año:</label>
+        <label for="selectSchoolYear">Año Escolar:</label>
         <select id="selectSchoolYear" class="year-select">
-          <option value="2026">2026</option>
+          <option value="2026">2026 (Actual)</option>
           <option value="2027">2027 (Desde cero)</option>
         </select>
       </div>
@@ -31,16 +31,19 @@
         <span class="dot ok"></span>
         <span id="globalConflictText">0 Topones detectados</span>
       </div>
+      <button class="btn btn-outline btn-sm" id="btnUndo" title="Deshacer el último cambio realizado en el horario" disabled>
+        ↩️ Deshacer
+      </button>
       <button class="btn btn-outline btn-sm" id="btnResetYearData" title="Restaurar la configuración predeterminada del año seleccionado">
         🔄 Restaurar Base
       </button>
       <button class="btn btn-outline btn-sm" id="btnExportCSV" title="Descargar planilla de horarios en formato CSV">
         📊 Exportar Planilla (CSV)
       </button>
-      <button class="btn btn-outline btn-sm" id="btnExportJSON" title="Guardar respaldo completo del sistema">
+      <button class="btn btn-outline btn-sm" id="btnExportJSON" title="Guardar respaldo completo del sistema en tu computador">
         💾 Guardar Respaldo
       </button>
-      <label class="btn btn-outline btn-sm file-label" title="Cargar respaldo desde archivo">
+      <label class="btn btn-outline btn-sm file-label" title="Cargar un archivo de respaldo previamente guardado">
         📂 Cargar Respaldo
         <input type="file" id="inputImportJSON" accept=".json" hidden />
       </label>
@@ -56,19 +59,22 @@
       🗓️ Horario por Curso (1º a 8º)
     </button>
     <button class="nav-tab" data-tab="tab-resumen">
-      📊 Sábana General de Horarios
+      📊 Panorama General (Todos los Cursos)
     </button>
     <button class="nav-tab" data-tab="tab-profesor-vista">
       👨‍🏫 Horario por Profesor
     </button>
     <button class="nav-tab" data-tab="tab-profesores">
-      📑 Carga Docente (Lectivas / SEP / No Lectivas) (<span id="navCountProfesores">0</span>)
+      📑 Carga Docente (65/35 y SEP) (<span id="navCountProfesores">0</span>)
     </button>
     <button class="nav-tab" data-tab="tab-cursos">
       📚 Plan de Estudio por Curso (<span id="navCountCursos">0</span>)
     </button>
     <button class="nav-tab" data-tab="tab-bloques">
-      ⏰ Bloques y Jornada (38 hrs)
+      ⏰ Bloques y Jornada
+    </button>
+    <button class="nav-tab nav-tab-help" data-tab="tab-manual">
+      📖 Manual de Usuario (Ayuda UTP)
     </button>
   </nav>
 
@@ -102,7 +108,7 @@
               </button>
             </div>
             <p class="helper-text">
-              Haz <strong>clic</strong> en una asignatura (o <strong>arrástrala</strong> al horario). Los bloques donde el profesor ya hace clases en otro curso se bloquean en rojo para evitar topones.
+              Haz <strong>clic</strong> en una asignatura y luego en el calendario (o <strong>arrástrala</strong>). También puedes arrastrar un bloque ya asignado hacia otro para <strong>intercambiarlos</strong>.
             </p>
             <div id="courseSubjectsPalette" class="palette-list"></div>
 
@@ -170,27 +176,42 @@
       </div>
     </section>
 
-    <!-- ==================== TAB 2: SÁBANA GENERAL DE HORARIOS ==================== -->
+    <!-- ==================== TAB 2: PANORAMA GENERAL REDISEÑADO (LIMPIO Y ORDENADO) ==================== -->
     <section id="tab-resumen" class="tab-panel">
-      <div class="card">
-        <div class="card-header-flex">
-          <div>
-            <h2>1. Resumen General de Clases por Curso (1º a 8º Básico)</h2>
-            <p class="helper-text">Vista panorámica semanal de asignaturas por curso (Lunes a Jueves 8 bloques, Viernes 6 bloques = 38 hrs).</p>
-          </div>
-          <div class="no-print" id="sabanaConflictSummary"></div>
-        </div>
-        <div class="table-responsive" id="sabanaSubjectsContainer"></div>
-      </div>
+      <!-- Tarjetas ejecutivas de avance por curso -->
+      <div class="overview-kpis no-print" id="overviewCourseCards"></div>
 
       <div class="card">
-        <div class="card-header-flex">
+        <div class="panorama-toolbar">
           <div>
-            <h2>2. Resumen General de Profesores por Bloque (Control de Topones)</h2>
-            <p class="helper-text">Muestra la sigla del profesor asignado en cada curso y bloque. Si un profesor se repite en la misma columna (mismo día y hora), se marca automáticamente en <strong>ROJO</strong>.</p>
+            <h2 id="panoramaMainTitle">Panorama Comparativo de Todos los Cursos (1º a 8º Básico)</h2>
+            <p class="helper-text" style="padding:0; margin-top:0.2rem;">
+              Compara en paralelo qué asignatura y qué profesor están en cada curso a la misma hora. Haz clic en cualquier celda para editarla.
+            </p>
+          </div>
+
+          <div class="panorama-controls no-print">
+            <!-- Selector de Día o Semana Completa -->
+            <div class="day-Segmented-Control" id="panoramaDayButtons">
+              <button type="button" class="seg-btn active" data-day="0">Lunes</button>
+              <button type="button" class="seg-btn" data-day="1">Martes</button>
+              <button type="button" class="seg-btn" data-day="2">Miércoles</button>
+              <button type="button" class="seg-btn" data-day="3">Jueves</button>
+              <button type="button" class="seg-btn" data-day="4">Viernes</button>
+              <button type="button" class="seg-btn" data-day="WEEK">📅 Semana Compacta</button>
+            </div>
+
+            <!-- Filtro para iluminar a un profesor específico -->
+            <div class="highlight-teacher-box">
+              <label for="selectHighlightTeacher">🔍 Destacar Profesor:</label>
+              <select id="selectHighlightTeacher" class="form-control form-control-sm">
+                <option value="">Mostrar todos por igual</option>
+              </select>
+            </div>
           </div>
         </div>
-        <div class="table-responsive" id="sabanaTeachersContainer"></div>
+
+        <div class="table-responsive" id="panoramaContentContainer"></div>
       </div>
     </section>
 
@@ -244,7 +265,7 @@
                 <input type="text" id="teacherInitialsInput" class="form-control" maxlength="5" placeholder="Ej: ML" required />
               </div>
               <div class="form-group">
-                <label for="teacherColorInput">Color</label>
+                <label for="teacherColorInput">Color Identificador</label>
                 <input type="color" id="teacherColorInput" class="form-control color-input" value="#2563eb" />
               </div>
             </div>
@@ -443,6 +464,102 @@
               </thead>
               <tbody id="periodsTableBody"></tbody>
             </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 7: MANUAL DE USUARIO (DIRECCIÓN Y UTP) ==================== -->
+    <section id="tab-manual" class="tab-panel">
+      <div class="manual-container">
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <h2>📖 Manual de Usuario — Dirección y Jefatura de UTP</h2>
+              <p class="helper-text" style="padding:0; margin-top:0.2rem;">
+                Guía práctica paso a paso para administrar horarios, prevenir topones docentes, cambiar de año escolar y respaldar la información.
+              </p>
+            </div>
+            <button class="btn btn-primary btn-sm no-print" onclick="window.print()">🖨️ Imprimir este Manual</button>
+          </div>
+
+          <div class="manual-grid">
+            <!-- Paso 1 -->
+            <div class="manual-section">
+              <div class="manual-badge">1</div>
+              <h3>Cómo Asignar o Modificar Clases en un Curso</h3>
+              <p>Dirígete a la primera pestaña <strong>🗓️ Horario por Curso (1º a 8º)</strong>:</p>
+              <ol>
+                <li><strong>Elige el curso:</strong> Haz clic en los botones rápidos (<code>1º</code> a <code>8º</code>) arriba a la izquierda.</li>
+                <li><strong>Selecciona la asignatura:</strong> Haz clic sobre cualquier ramo de la lista izquierda (ej. <em>Matemática</em>) y luego haz clic en el bloque deseado del calendario, o simplemente <strong>arrástralo</strong> hacia el calendario.</li>
+                <li><strong>Intercambiar dos bloques (Enroque):</strong> Si deseas cambiar una clase de hora dentro del mismo curso, <strong>arrastra un bloque ya asignado sobre otro bloque del calendario</strong> y el sistema los intercambiará automáticamente si no hay topón.</li>
+                <li><strong>Borrar un bloque:</strong> Pasa el mouse sobre la celda y presiona la <code>✕</code> en la esquina superior derecha, o activa el botón <strong>🧹 Modo Borrador</strong>.</li>
+                <li><strong>Deshacer un error:</strong> Si borraste o moviste algo por accidente, presiona el botón superior <strong>↩️ Deshacer</strong>.</li>
+              </ol>
+            </div>
+
+            <!-- Paso 2 -->
+            <div class="manual-section">
+              <div class="manual-badge">2</div>
+              <h3>Cómo Funciona la Prevención de Topones y Límite de Horas</h3>
+              <p>El sistema protege automáticamente la planificación para que ningún profesor sea asignado a dos cursos a la misma hora:</p>
+              <ul>
+                <li><strong>Aviso visual en rojo (⛔ Topón):</strong> Apenas seleccionas una asignatura en el panel izquierdo, el calendario te muestra en color rojo todos los bloques donde ese profesor <strong>ya está haciendo clases en otro curso</strong> (indicando en qué curso está).</li>
+                <li><strong>Contador automático de horas:</strong> Cada asignatura muestra su avance (ej. <code>6 / 6h</code>). Cuando las horas del Plan de Estudio ya están completas, el sistema avisa y evita sobreasignar horas de más.</li>
+                <li><strong>Excepción automática para Talleres (T):</strong> El bloque de <em>Talleres Electivos / Rotativos</em> permite asignarse en paralelo en los cursos del mismo ciclo sin marcar falso error de topón.</li>
+              </ul>
+            </div>
+
+            <!-- Paso 3 -->
+            <div class="manual-section">
+              <div class="manual-badge">3</div>
+              <h3>Cómo Restaurar Todo el Horario o Empezar un Año Nuevo (2027)</h3>
+              <p>En la barra superior derecha cuentas con controles seguros para gestionar cada período:</p>
+              <ul>
+                <li><strong>Cambiar entre 2026 y 2027 (Desde cero):</strong> Usa el selector superior <strong>Año Escolar</strong>. El año <code>2026</code> conserva el horario actual completo, mientras que <code>2027 (Desde cero)</code> te entrega los 8 cursos y planes listos con el calendario limpio para armar el nuevo año sin borrar el 2026.</li>
+                <li><strong>Restaurar el horario original (🔄 Restaurar Base):</strong> Si hiciste pruebas y deseas volver exactamente al horario oficial predeterminado del colegio, haz clic en <strong>🔄 Restaurar Base</strong> en la barra superior y confirma.</li>
+                <li><strong>Vaciar un curso o todos los cursos:</strong> En el panel izquierdo de <em>Acciones Rápidas</em> puedes presionar <strong>🗑️ Vaciar Horario de Este Curso</strong> o <strong>🗑️ Vaciar Todos los Cursos</strong> para limpiar solo las celdas manteniendo intactos a los profesores y planes de estudio.</li>
+                <li><strong>Autocompletado Inteligente (🪄 / 🚀):</strong> Si tienes bloques vacíos, presiona <strong>🪄 Autocompletar Horas Faltantes</strong> para que el sistema ubique automáticamente las horas pendientes sin ningún topón.</li>
+              </ul>
+            </div>
+
+            <!-- Paso 4 -->
+            <div class="manual-section">
+              <div class="manual-badge">4</div>
+              <h3>Cómo Usar el Panorama General y el Buscador de Profesor</h3>
+              <p>En la pestaña <strong>📊 Panorama General (Todos los Cursos)</strong>:</p>
+              <ul>
+                <li><strong>Vista por Día (Lunes a Viernes):</strong> Muestra los 8 cursos (<code>1º</code> a <code>8º</code>) uno al lado del otro con el nombre completo de la asignatura y del profesor en cada bloque, más una columna de verificación (<code>✅ Sin topón</code>).</li>
+                <li><strong>Vista Semana Compacta:</strong> Muestra los 38 bloques semanales de todos los cursos en una sola tabla ejecutiva.</li>
+                <li><strong>🔍 Destacar Profesor:</strong> Selecciona a cualquier docente en el filtro superior derecho para <strong>iluminar todos los bloques donde hace clases</strong> a lo largo de los cursos y verificar su distribución de un vistazo.</li>
+                <li><strong>Edición directa:</strong> Puedes hacer clic sobre cualquier celda del Panorama General para cambiar o asignar una clase en ese mismo instante.</li>
+              </ul>
+            </div>
+
+            <!-- Paso 5 -->
+            <div class="manual-section">
+              <div class="manual-badge">5</div>
+              <h3>Cómo Bloquear Horas en que un Profesor No Puede Asistir</h3>
+              <p>Si un profesor tiene restricción horaria (por ejemplo, asiste solo ciertos días o tiene horas administrativas fijas):</p>
+              <ol>
+                <li>Entra a la pestaña <strong>👨‍🏫 Horario por Profesor</strong> y elige al docente.</li>
+                <li>Haz clic en el botón <strong>🔒 Marcar Horas No Disponibles</strong>.</li>
+                <li>Haz clic sobre los bloques libres donde el profesor <strong>no puede tomar clases</strong> (quedarán marcados con candado).</li>
+                <li>Presiona <strong>Listo</strong>. Desde ese momento, el sistema impedirá asignarle clases en esos bloques.</li>
+              </ol>
+            </div>
+
+            <!-- Paso 6 -->
+            <div class="manual-section">
+              <div class="manual-badge">6</div>
+              <h3>Cómo Editar Profesores, Planes de Estudio, Respaldar e Imprimir</h3>
+              <ul>
+                <li><strong>Cambiar el profesor de una asignatura:</strong> Ve a <strong>📚 Plan de Estudio por Curso</strong>, elige el curso a la izquierda, presiona el botón <code>✏️</code> junto a la asignatura, selecciona al nuevo profesor y presiona <strong>Actualizar</strong>. El cambio se actualizará automáticamente en todo el horario.</li>
+                <li><strong>Revisar horas de contrato y proporción 65/35:</strong> En <strong>📑 Carga Docente (65/35 y SEP)</strong> puedes agregar profesores nuevos, editar sus horas SEP/PIE o abrir su <strong>📋 Ficha</strong> detallada.</li>
+                <li><strong>Guardar y compartir cambios entre computadores (💾 / 📂):</strong> Como el sistema funciona directo en el navegador, los cambios se guardan automáticamente en tu computador. Si deseas enviar tu trabajo a otro computador (Windows o Mac), presiona <strong>💾 Guardar Respaldo</strong> (descarga un archivo <code>.json</code>) y en el otro computador presiona <strong>📂 Cargar Respaldo</strong>.</li>
+                <li><strong>Imprimir o Guardar en PDF (🖨️):</strong> Entra al horario del curso, del profesor o al Panorama General y presiona <strong>🖨️ Imprimir / PDF</strong> arriba a la derecha.</li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
