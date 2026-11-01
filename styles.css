@@ -1492,6 +1492,42 @@ body {
 /* ==========================================================================
    BASE DE DATOS EN LA NUBE (FIREBASE REALTIME SYNC)
    ========================================================================== */
+.btn-save-db {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+  transition: all 0.2s ease;
+  border-radius: 6px;
+}
+
+.btn-save-db.saved {
+  background: rgba(34, 197, 94, 0.2);
+  color: #dcfce7;
+  border: 1px solid rgba(34, 197, 94, 0.45);
+}
+
+.btn-save-db.unsaved {
+  background: #f59e0b;
+  color: #0f172a;
+  border: 1px solid #fbbf24;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.65);
+  animation: pulseSaveBtn 1.6s infinite;
+}
+
+.btn-save-db.unsaved:hover {
+  background: #fbbf24;
+}
+
+@keyframes pulseSaveBtn {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
 .btn-cloud {
   display: inline-flex;
   align-items: center;

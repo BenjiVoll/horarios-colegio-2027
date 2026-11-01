@@ -27,10 +27,15 @@
         </select>
       </div>
 
+      <!-- Botón Principal para Guardar Cambios en la Base de Datos -->
+      <button class="btn btn-save-db btn-sm saved" id="btnSaveChanges" type="button" title="Guardar todos los cambios realizados en la Base de Datos en la Nube">
+        ✅ Guardado
+      </button>
+
       <!-- Estado y Configuración de Base de Datos en la Nube -->
-      <button class="btn btn-cloud btn-sm" id="btnOpenCloudModal" type="button" title="Configurar o verificar la sincronización en tiempo real con la Base de Datos en la Nube (Firebase)">
+      <button class="btn btn-cloud btn-sm" id="btnOpenCloudModal" type="button" title="Configurar o verificar la sincronización con la Base de Datos en la Nube (Firebase)">
         <span class="cloud-dot disconnected" id="cloudStatusDot"></span>
-        <span id="cloudStatusText">☁️ Conectar Base de Datos</span>
+        <span id="cloudStatusText">☁️ Nube</span>
       </button>
 
       <div class="conflict-badge" id="globalConflictBadge" title="Estado de validación de topones en todo el colegio">
@@ -46,8 +51,8 @@
       <button class="btn btn-outline btn-sm" id="btnExportCSV" title="Descargar planilla de horarios en formato CSV">
         📊 Exportar Planilla (CSV)
       </button>
-      <button class="btn btn-outline btn-sm" id="btnExportJSON" title="Guardar respaldo completo del sistema en tu computador">
-        💾 Guardar Respaldo
+      <button class="btn btn-outline btn-sm" id="btnExportJSON" title="Descargar archivo de respaldo en tu computador">
+        📥 Descargar Respaldo
       </button>
       <label class="btn btn-outline btn-sm file-label" title="Cargar un archivo de respaldo previamente guardado">
         📂 Cargar Respaldo

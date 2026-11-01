@@ -23,6 +23,7 @@ let currentSchoolYear = '2026';
 let undoStack = [];
 let cloudSyncTimer = null;
 let isPushingToCloud = false;
+let hasUnsavedChanges = false;
 
 // Estado global
 let state = {
@@ -620,6 +621,44 @@ async function pushStateToCloud(year = currentSchoolYear) {
   }
 }
 
+function updateSaveButtonUI() {
+  const btn = document.getElementById('btnSaveChanges');
+  if (!btn) return;
+  if (hasUnsavedChanges) {
+    btn.className = 'btn btn-save-db btn-sm unsaved';
+    btn.innerHTML = '💾 Guardar Cambios <small>(Sin guardar)</small>';
+  } else {
+    btn.className = 'btn btn-save-db btn-sm saved';
+    btn.innerHTML = '✅ Guardado';
+  }
+}
+
+async function commitSaveToDatabase() {
+  state.updatedAt = Date.now();
+  state.clientId = CLIENT_SESSION_ID;
+  try {
+    localStorage.setItem(getStorageKeyForYear(currentSchoolYear), JSON.stringify(state));
+  } catch (err) {
+    console.error('Error al guardar en almacenamiento local:', err);
+  }
+  updateGlobalCounters();
+
+  if (getActiveFirebaseUrl()) {
+    const ok = await pushStateToCloud(currentSchoolYear);
+    if (ok) {
+      hasUnsavedChanges = false;
+      updateSaveButtonUI();
+      showToast('💾 ¡Cambios guardados en la Base de Datos!', 'success');
+    } else {
+      showToast('⚠️ Se guardó localmente, pero hubo un problema al subir a la nube.', 'warn');
+    }
+  } else {
+    hasUnsavedChanges = false;
+    updateSaveButtonUI();
+    showToast('💾 Cambios guardados.', 'success');
+  }
+}
+
 async function pullStateFromCloud(year = currentSchoolYear, options = { force: false, silent: false }) {
   const endpoint = getCloudEndpoint(year);
   if (!endpoint) {
@@ -627,7 +666,8 @@ async function pullStateFromCloud(year = currentSchoolYear, options = { force: f
     return false;
   }
 
-  if (isPushingToCloud && !options.force) return false;
+  // No sobrescribir cambios en pantalla que el usuario aún no ha guardado (a menos que sea forzado al iniciar)
+  if ((isPushingToCloud || hasUnsavedChanges) && !options.force) return false;
 
   try {
     if (!options.silent) {
@@ -660,6 +700,8 @@ async function pullStateFromCloud(year = currentSchoolYear, options = { force: f
         updatedAt: cloudUpdatedAt || Date.now(),
         clientId: cloudData.clientId || ''
       };
+      hasUnsavedChanges = false;
+      updateSaveButtonUI();
       try {
         localStorage.setItem(getStorageKeyForYear(year), JSON.stringify(state));
       } catch (e) {
@@ -671,7 +713,7 @@ async function pullStateFromCloud(year = currentSchoolYear, options = { force: f
       }
     }
 
-    updateCloudStatusUI('connected', '☁️ Nube Sincronizada');
+    updateCloudStatusUI('connected', '☁️ Nube');
     return true;
   } catch (err) {
     console.error('Error al descargar desde Firebase:', err);
@@ -683,14 +725,21 @@ async function pullStateFromCloud(year = currentSchoolYear, options = { force: f
 function startCloudSyncLoop() {
   if (cloudSyncTimer) clearInterval(cloudSyncTimer);
   cloudSyncTimer = setInterval(() => {
-    if (getActiveFirebaseUrl() && !isPushingToCloud) {
+    if (getActiveFirebaseUrl() && !isPushingToCloud && !hasUnsavedChanges) {
       pullStateFromCloud(currentSchoolYear, { force: false, silent: true });
     }
   }, 4000);
 
   window.addEventListener('focus', () => {
-    if (getActiveFirebaseUrl() && !isPushingToCloud) {
+    if (getActiveFirebaseUrl() && !isPushingToCloud && !hasUnsavedChanges) {
       pullStateFromCloud(currentSchoolYear, { force: false, silent: true });
+    }
+  });
+
+  window.addEventListener('beforeunload', (e) => {
+    if (hasUnsavedChanges) {
+      e.preventDefault();
+      e.returnValue = '';
     }
   });
 }
@@ -705,7 +754,9 @@ function loadState(year = null) {
     }
 
     undoStack = [];
+    hasUnsavedChanges = false;
     updateUndoButton();
+    updateSaveButtonUI();
 
     const selectYearEl = document.getElementById('selectSchoolYear');
     if (selectYearEl) {
@@ -742,7 +793,12 @@ function loadState(year = null) {
   state = getInstitutionalBaseData(false);
   state.updatedAt = Date.now();
   state.clientId = CLIENT_SESSION_ID;
-  saveState(false);
+  try {
+    localStorage.setItem(getStorageKeyForYear(currentSchoolYear), JSON.stringify(state));
+  } catch (e) {
+    console.error(e);
+  }
+  updateGlobalCounters();
 
   if (getActiveFirebaseUrl()) {
     pullStateFromCloud(currentSchoolYear, { force: true, silent: true, isInitial: true });
@@ -751,17 +807,11 @@ function loadState(year = null) {
   }
 }
 
-function saveState(syncCloud = true) {
-  state.updatedAt = Date.now();
-  state.clientId = CLIENT_SESSION_ID;
-  try {
-    localStorage.setItem(getStorageKeyForYear(currentSchoolYear), JSON.stringify(state));
-  } catch (err) {
-    console.error('Error al guardar en almacenamiento local:', err);
-  }
+function saveState(markUnsaved = true) {
   updateGlobalCounters();
-  if (syncCloud && getActiveFirebaseUrl()) {
-    pushStateToCloud(currentSchoolYear);
+  if (markUnsaved) {
+    hasUnsavedChanges = true;
+    updateSaveButtonUI();
   }
 }
 
@@ -2839,7 +2889,21 @@ function initEventListeners() {
     state = getInstitutionalBaseData(false);
     saveState();
     renderAll();
-    showToast(`🧹 Horario (${currentSchoolYear}) reiniciado a cero en todos los cursos.`, 'success');
+    showToast(`🧹 Horario (${currentSchoolYear}) reiniciado en pantalla. Presiona "💾 Guardar Cambios" para confirmar en la Base de Datos.`, 'info');
+  });
+
+  const btnSaveChanges = document.getElementById('btnSaveChanges');
+  if (btnSaveChanges) {
+    btnSaveChanges.addEventListener('click', () => {
+      commitSaveToDatabase();
+    });
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      commitSaveToDatabase();
+    }
   });
 
   // Eventos de Base de Datos en la Nube (Firebase Realtime Database)
