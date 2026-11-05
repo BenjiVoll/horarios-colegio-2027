@@ -1,0 +1,16 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "sistema_horarios_2026": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".validate": "newData.hasChildren(['teachers', 'courses', 'periods', 'requirements', 'updatedAt'])"
+    },
+    "sistema_horarios_2027": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".validate": "newData.hasChildren(['teachers', 'courses', 'periods', 'requirements', 'updatedAt'])"
+    }
+  }
+}

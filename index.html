@@ -7,7 +7,70 @@
   <link rel="icon" type="image/png" href="logo-colegio.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="auth-locked">
+  <!-- ==================== PANTALLA DE INICIO DE SESIÓN Y PROTECCIÓN DE ACCESO ==================== -->
+  <div id="authLoginOverlay" class="auth-overlay no-print">
+    <div class="auth-card">
+      <div class="auth-card-header">
+        <img src="logo-colegio.png" alt="Christian College Logo" class="auth-logo" />
+        <h2>Christian College</h2>
+        <p class="auth-subtitle">Acceso Institucional — Dirección y Jefatura de UTP</p>
+        <div class="auth-security-badge">
+          🔒 Conexión Encriptada · Firebase Authentication &amp; Reglas Seguras
+        </div>
+      </div>
+
+      <form id="authLoginForm" class="auth-form" autocomplete="on">
+        <div id="authErrorAlert" class="auth-alert auth-alert-error hidden"></div>
+        <div id="authInfoAlert" class="auth-alert auth-alert-info hidden"></div>
+
+        <div class="form-group">
+          <label for="authEmailInput">Correo Institucional Autorizado *</label>
+          <input
+            type="email"
+            id="authEmailInput"
+            class="form-control"
+            placeholder="direccion@christiancollege.cl"
+            autocomplete="username"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <label for="authPasswordInput" style="margin-bottom:0;">Contraseña *</label>
+            <button type="button" class="btn-link-inline" id="btnTogglePasswordView">👁️ Mostrar</button>
+          </div>
+          <input
+            type="password"
+            id="authPasswordInput"
+            class="form-control"
+            placeholder="••••••••••••"
+            autocomplete="current-password"
+            style="margin-top:0.3rem;"
+            required
+          />
+        </div>
+
+        <div class="auth-remember-row">
+          <label class="auth-checkbox-label">
+            <input type="checkbox" id="authRememberSession" checked />
+            <span>Mantener sesión activa en este equipo</span>
+          </label>
+          <button type="button" class="btn-link-inline" id="btnForgotPassword">¿Olvidaste tu contraseña?</button>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block auth-submit-btn" id="btnSubmitLogin">
+          🔐 Iniciar Sesión Segura
+        </button>
+      </form>
+
+      <div class="auth-card-footer">
+        <span>Acceso exclusivo para personal directivo autorizado · Cierre automático por inactividad (60 min)</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Barra Superior -->
   <header class="topbar no-print">
     <div class="brand">
@@ -49,6 +112,15 @@
       <button class="btn btn-primary btn-sm" id="btnPrint" title="Imprimir o guardar como PDF la vista actual">
         🖨️ Imprimir / PDF
       </button>
+
+      <!-- Indicador de Sesión Activa y Cierre de Sesión -->
+      <div class="session-user-box" id="authSessionBadge" title="Sesión autenticada con Firebase Security">
+        <span class="session-lock-icon">🔒</span>
+        <span id="authUserEmailText" class="session-email-text">Autenticado</span>
+        <button class="btn-logout-pill" id="btnLogout" type="button" title="Cerrar sesión de forma segura">
+          Salir
+        </button>
+      </div>
     </div>
   </header>
 
@@ -639,42 +711,75 @@
     </div>
   </div>
 
-  <!-- Modal Configuración de Base de Datos en Tiempo Real (Firebase Realtime Database) -->
+  <!-- Modal Configuración de Base de Datos en Tiempo Real y Seguridad (Firebase Auth + Realtime Database) -->
   <div id="cloudConfigModal" class="modal-backdrop hidden no-print">
-    <div class="modal-dialog" style="max-width:640px;">
+    <div class="modal-dialog" style="max-width:700px;">
       <div class="modal-header">
-        <h3>☁️ Base de Datos en Tiempo Real (Sincronización Multi-Dispositivo)</h3>
+        <h3>🔒 Seguridad y Base de Datos en Tiempo Real (Firebase Auth + Reglas Seguras)</h3>
         <button class="modal-close" id="btnCloseCloudModal" type="button">✕</button>
       </div>
       <div class="modal-body">
         <p class="helper-text" style="margin-bottom:0.85rem;">
-          Al conectar una <strong>Firebase Realtime Database (Google)</strong>, cada cambio que realices (asignar bloques, vaciar un curso, agregar o borrar profesores) se guarda <strong>dinámicamente en la nube</strong> y se actualiza al instante en todos los computadores y dispositivos.
+          La base de datos está protegida mediante <strong>Firebase Authentication</strong> y <strong>Reglas de Seguridad (<code>auth != null</code>)</strong>. Solo los usuarios con sesión activa pueden leer o guardar horarios.
         </p>
 
         <div class="cloud-status-banner" id="cloudModalStatusBanner">
-          <strong>Estado actual:</strong> <span id="cloudModalStatusDetail">Modo Local (Sin URL de nube configurada)</span>
+          <strong>Estado actual:</strong> <span id="cloudModalStatusDetail">Conectado de forma segura</span>
         </div>
 
-        <div class="form-group" style="margin-top:1rem;">
-          <label for="inputFirebaseDbUrl"><strong>URL de tu Firebase Realtime Database:</strong></label>
-          <input
-            type="url"
-            id="inputFirebaseDbUrl"
-            class="form-control"
-            placeholder="https://tu-proyecto-default-rtdb.firebaseio.com"
-            style="margin-top:0.35rem; font-family:monospace;"
-          />
-          <small class="helper-text" style="display:block; margin-top:0.35rem;">
-            Ejemplo: <code>https://horarios-colegio-2027-default-rtdb.firebaseio.com</code>
-          </small>
+        <div class="form-row" style="margin-top:1rem;">
+          <div class="form-group">
+            <label for="inputFirebaseDbUrl"><strong>URL de Firebase Realtime Database:</strong></label>
+            <input
+              type="url"
+              id="inputFirebaseDbUrl"
+              class="form-control"
+              placeholder="https://horarios-colegio-bc2db-default-rtdb.firebaseio.com"
+              style="margin-top:0.35rem; font-family:monospace; font-size:0.82rem;"
+            />
+          </div>
+          <div class="form-group">
+            <label for="inputFirebaseApiKey"><strong>Firebase Web API Key (Clave de API Web):</strong></label>
+            <input
+              type="text"
+              id="inputFirebaseApiKey"
+              class="form-control"
+              placeholder="AIzaSy..."
+              style="margin-top:0.35rem; font-family:monospace; font-size:0.82rem;"
+            />
+          </div>
         </div>
 
         <div class="cloud-steps-box">
-          <h4>🚀 Cómo crear tu Base de Datos gratuita en 3 pasos (2 minutos):</h4>
-          <ol>
-            <li>Entra a <a href="https://console.firebase.google.com/" target="_blank" rel="noopener">console.firebase.google.com</a> con tu cuenta Google y haz clic en <strong>Crear un proyecto</strong> (puedes desactivar Google Analytics para terminar en 10 segundos).</li>
-            <li>En el menú izquierdo abre <strong>Compilación ➔ Realtime Database</strong> y haz clic en <strong>Crear base de datos</strong> ➔ elige <strong>Comenzar en modo de prueba (Test mode)</strong> ➔ <strong>Habilitar</strong>.</li>
-            <li>Copia el enlace que aparece arriba de la base de datos (termina en <code>.firebaseio.com</code>) y pégalo aquí arriba (o envíaselo al asistente para dejarlo integrado fijo en el código de GitHub Pages).</li>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.45rem;">
+            <h4 style="margin:0;">🛡️ Reglas Seguras para eliminar la alerta de Firebase:</h4>
+            <button type="button" class="btn btn-primary btn-xs" id="btnCopySecurityRules">
+              📋 Copiar Reglas Seguras (.json)
+            </button>
+          </div>
+          <p style="font-size:0.8rem; color:#334155; margin-bottom:0.45rem;">
+            En <a href="https://console.firebase.google.com/project/horarios-colegio-bc2db/database/horarios-colegio-bc2db-default-rtdb/rules" target="_blank" rel="noopener">Firebase Console ➔ Realtime Database ➔ Reglas</a>, reemplaza las reglas por estas y haz clic en <strong>Publicar</strong>:
+          </p>
+          <pre id="firebaseSecureRulesCode" class="security-rules-pre">{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "sistema_horarios_2026": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".validate": "newData.hasChildren(['teachers', 'courses', 'periods', 'requirements', 'updatedAt'])"
+    },
+    "sistema_horarios_2027": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".validate": "newData.hasChildren(['teachers', 'courses', 'periods', 'requirements', 'updatedAt'])"
+    }
+  }
+}</pre>
+          <ol style="margin-top:0.55rem; font-size:0.8rem;">
+            <li>Ve a <a href="https://console.firebase.google.com/project/horarios-colegio-bc2db/authentication/providers" target="_blank" rel="noopener">Authentication ➔ Sign-in method</a> y habilita <strong>Correo electrónico/contraseña</strong>.</li>
+            <li>En <a href="https://console.firebase.google.com/project/horarios-colegio-bc2db/authentication/users" target="_blank" rel="noopener">Authentication ➔ Users</a> haz clic en <strong>Agregar usuario</strong> para crear las cuentas de Dirección y UTP.</li>
+            <li>En <a href="https://console.firebase.google.com/project/horarios-colegio-bc2db/settings/general" target="_blank" rel="noopener">⚙️ Configuración del proyecto ➔ General</a> copia la <strong>Clave de API web (<code>AIzaSy...</code>)</strong> y pégala arriba.</li>
           </ol>
         </div>
       </div>
@@ -683,13 +788,13 @@
           <button class="btn btn-outline btn-sm" id="btnForcePullCloud" type="button" title="Descargar el estado más reciente desde la nube">
             ⬇️ Descargar de Nube
           </button>
-          <button class="btn btn-danger-outline btn-sm" id="btnDisconnectCloud" type="button" title="Desconectar URL local">
-            Desconectar
+          <button class="btn btn-danger-outline btn-sm" id="btnDisconnectCloud" type="button" title="Restaurar valores por defecto">
+            Restablecer
           </button>
         </div>
         <div style="display:flex; gap:0.4rem;">
           <button class="btn btn-primary btn-sm" id="btnSaveCloudUrl" type="button">
-            ☁️ Conectar y Sincronizar Ahora
+            🔒 Guardar Credenciales y Sincronizar
           </button>
           <button class="btn btn-outline btn-sm" id="btnCancelCloudModal" type="button">Cerrar</button>
         </div>

@@ -3,13 +3,21 @@
  * Dirección y UTP — Planificación Académica, Cursos (1º a 8º Básico), Panorama General y Carga Docente (65/35)
  */
 
-// URL de Firebase Realtime Database (integrada fija para sincronización automática en todos los dispositivos)
+// URL de Firebase Realtime Database y Credenciales de Autenticación (Firebase Auth)
 const DEFAULT_FIREBASE_DB_URL = 'https://horarios-colegio-bc2db-default-rtdb.firebaseio.com';
+const DEFAULT_FIREBASE_API_KEY = 'AIzaSyCNclZbblM7WV-TgYvcE9hAgsO2puyMybw';
 const FIREBASE_URL_STORAGE_KEY = 'eduhorario_firebase_db_url_v1';
+const FIREBASE_API_KEY_STORAGE_KEY = 'eduhorario_firebase_api_key_v1';
+const AUTH_SESSION_STORAGE_KEY = 'eduhorario_auth_session_v1';
+const SESSION_INACTIVITY_LIMIT_MS = 60 * 60 * 1000; // 60 minutos de inactividad máxima
 
 const ACTIVE_YEAR_KEY = 'eduhorario_active_school_year_v4';
 const STORAGE_PREFIX = 'eduhorario_school_data_v4_';
 const CLIENT_SESSION_ID = 'client_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+
+let authSession = null;
+let inactivityTimer = null;
+let tokenRefreshTimer = null;
 
 const DAYS = [
   { index: 0, name: 'Lunes', short: 'LUN', maxClassBlocks: 8 },
@@ -541,7 +549,7 @@ function getInstitutionalBaseData(includeScheduleAssignments = true) {
 }
 
 /* ==========================================================================
-   PERSISTENCIA DINÁMICA EN LA NUBE (FIREBASE) Y POR AÑO ESCOLAR
+   MIDDLEWARE DE AUTENTICACIÓN, SESIONES Y SEGURIDAD (FIREBASE AUTH + JWT)
    ========================================================================== */
 function getStorageKeyForYear(year) {
   return `${STORAGE_PREFIX}${year}`;
@@ -553,12 +561,310 @@ function getActiveFirebaseUrl() {
   return saved.replace(/\/+$/, '').replace(/\.json$/i, '');
 }
 
+function getActiveFirebaseApiKey() {
+  return (localStorage.getItem(FIREBASE_API_KEY_STORAGE_KEY) || DEFAULT_FIREBASE_API_KEY || '').trim();
+}
+
 function getCloudEndpoint(year) {
   const baseUrl = getActiveFirebaseUrl();
   if (!baseUrl) return '';
   return `${baseUrl}/sistema_horarios_${year}.json`;
 }
 
+function isAuthenticated() {
+  return Boolean(authSession && authSession.idToken && authSession.email);
+}
+
+function loadStoredAuthSession() {
+  try {
+    const rawSession = sessionStorage.getItem(AUTH_SESSION_STORAGE_KEY) || localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+    if (!rawSession) return null;
+    const parsed = JSON.parse(rawSession);
+    if (parsed && parsed.idToken && parsed.refreshToken && parsed.email) {
+      return parsed;
+    }
+  } catch (err) {
+    console.error('Error al leer sesión almacenada:', err);
+  }
+  return null;
+}
+
+function saveAuthSession(sessionObj, remember = true) {
+  authSession = {
+    ...sessionObj,
+    remember: Boolean(remember),
+    lastActivityAt: Date.now()
+  };
+  try {
+    const serialized = JSON.stringify(authSession);
+    sessionStorage.setItem(AUTH_SESSION_STORAGE_KEY, serialized);
+    if (remember) {
+      localStorage.setItem(AUTH_SESSION_STORAGE_KEY, serialized);
+    } else {
+      localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+    }
+  } catch (err) {
+    console.error('Error al guardar sesión:', err);
+  }
+}
+
+function clearAuthSession() {
+  authSession = null;
+  if (tokenRefreshTimer) {
+    clearInterval(tokenRefreshTimer);
+    tokenRefreshTimer = null;
+  }
+  if (inactivityTimer) {
+    clearTimeout(inactivityTimer);
+    inactivityTimer = null;
+  }
+  if (cloudSyncTimer) {
+    clearInterval(cloudSyncTimer);
+    cloudSyncTimer = null;
+  }
+  try {
+    sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+    localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function showAuthAlert(message, type = 'error') {
+  const errEl = document.getElementById('authErrorAlert');
+  const infoEl = document.getElementById('authInfoAlert');
+  if (errEl) errEl.classList.add('hidden');
+  if (infoEl) infoEl.classList.add('hidden');
+  if (!message) return;
+
+  const target = type === 'info' ? infoEl : errEl;
+  if (target) {
+    target.textContent = message;
+    target.classList.remove('hidden');
+  }
+}
+
+function translateFirebaseAuthError(code) {
+  const msg = String(code || '').toUpperCase();
+  if (msg.includes('INVALID_LOGIN_CREDENTIALS') || msg.includes('INVALID_PASSWORD') || msg.includes('EMAIL_NOT_FOUND')) {
+    return 'Correo o contraseña incorrectos. Verifica tus credenciales institucionales.';
+  }
+  if (msg.includes('INVALID_EMAIL')) {
+    return 'El formato del correo electrónico no es válido.';
+  }
+  if (msg.includes('USER_DISABLED')) {
+    return 'Esta cuenta de usuario ha sido deshabilitada por el administrador.';
+  }
+  if (msg.includes('TOO_MANY_ATTEMPTS_TRY_LATER')) {
+    return 'Demasiados intentos fallidos. Por seguridad, espera unos minutos antes de reintentar.';
+  }
+  if (msg.includes('API_KEY_INVALID') || msg.includes('PROJECT_NOT_FOUND')) {
+    return 'La Firebase Web API Key configurada no es válida. Verifica la clave en Configuración.';
+  }
+  if (msg.includes('CONFIGURATION_NOT_FOUND') || msg.includes('OPERATION_NOT_ALLOWED')) {
+    return 'Debes habilitar el proveedor "Correo electrónico/contraseña" en Firebase Console ➔ Authentication ➔ Sign-in method.';
+  }
+  return `Error de autenticación (${code || 'Desconocido'}).`;
+}
+
+async function signInWithEmailPassword(email, password, remember = true) {
+  const apiKey = getActiveFirebaseApiKey();
+  if (!apiKey) {
+    const details = document.getElementById('authApiConfigDetails');
+    if (details) details.open = true;
+    throw new Error('Primero ingresa la Firebase Web API Key (AIzaSy...) de tu proyecto en la sección inferior "⚙️ Configuración de Credenciales Firebase".');
+  }
+
+  const endpoint = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: email.trim(),
+      password,
+      returnSecureToken: true
+    })
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    const errCode = data && data.error && data.error.message ? data.error.message : `HTTP_${res.status}`;
+    throw new Error(translateFirebaseAuthError(errCode));
+  }
+
+  const expiresInSec = Number(data.expiresIn || 3600);
+  const sessionObj = {
+    email: data.email,
+    localId: data.localId,
+    idToken: data.idToken,
+    refreshToken: data.refreshToken,
+    expiresAt: Date.now() + expiresInSec * 1000
+  };
+  saveAuthSession(sessionObj, remember);
+  return sessionObj;
+}
+
+async function refreshIdToken() {
+  if (!authSession || !authSession.refreshToken) {
+    throw new Error('SESSION_MISSING');
+  }
+  const apiKey = getActiveFirebaseApiKey();
+  if (!apiKey) {
+    throw new Error('API_KEY_MISSING');
+  }
+
+  const endpoint = `https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(authSession.refreshToken)}`
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data.id_token) {
+    throw new Error('TOKEN_REFRESH_FAILED');
+  }
+
+  const expiresInSec = Number(data.expires_in || 3600);
+  saveAuthSession(
+    {
+      ...authSession,
+      idToken: data.id_token,
+      refreshToken: data.refresh_token || authSession.refreshToken,
+      localId: data.user_id || authSession.localId,
+      expiresAt: Date.now() + expiresInSec * 1000
+    },
+    authSession.remember !== false
+  );
+  return authSession.idToken;
+}
+
+async function ensureValidIdToken() {
+  if (!isAuthenticated()) {
+    throw new Error('AUTH_REQUIRED');
+  }
+  // Renovar automáticamente si faltan menos de 3 minutos para que expire el JWT
+  if (Date.now() >= Number(authSession.expiresAt || 0) - 180000) {
+    return await refreshIdToken();
+  }
+  return authSession.idToken;
+}
+
+async function sendPasswordResetEmail(email) {
+  const apiKey = getActiveFirebaseApiKey();
+  if (!apiKey) {
+    const details = document.getElementById('authApiConfigDetails');
+    if (details) details.open = true;
+    throw new Error('Primero configura la Firebase Web API Key en la sección inferior.');
+  }
+  const endpoint = `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requestType: 'PASSWORD_RESET',
+      email: email.trim()
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const errCode = data && data.error && data.error.message ? data.error.message : `HTTP_${res.status}`;
+    throw new Error(translateFirebaseAuthError(errCode));
+  }
+  return true;
+}
+
+/**
+ * Middleware central para llamadas autenticadas a Firebase Realtime Database.
+ * Adjunta el token JWT (?auth=idToken) y reintenta si el token acaba de expirar.
+ */
+async function authenticatedDatabaseFetch(endpointUrl, options = {}, extraQuery = '') {
+  const idToken = await ensureValidIdToken();
+  const separator = endpointUrl.includes('?') ? '&' : '?';
+  const queryParts = [`auth=${encodeURIComponent(idToken)}`];
+  if (extraQuery) queryParts.push(extraQuery);
+  const finalUrl = `${endpointUrl}${separator}${queryParts.join('&')}`;
+
+  let res = await fetch(finalUrl, options);
+
+  // Si Firebase devuelve 401 por expiración del token, refrescamos una vez y reintentamos
+  if (res.status === 401) {
+    try {
+      const freshToken = await refreshIdToken();
+      const retryParts = [`auth=${encodeURIComponent(freshToken)}`];
+      if (extraQuery) retryParts.push(extraQuery);
+      res = await fetch(`${endpointUrl}${separator}${retryParts.join('&')}`, options);
+    } catch (refreshErr) {
+      lockApplicationUI('Tu sesión ha expirado. Por favor inicia sesión nuevamente.');
+      throw new Error('SESSION_EXPIRED');
+    }
+  }
+
+  return res;
+}
+
+function resetInactivityWatchdog() {
+  if (!isAuthenticated()) return;
+  if (inactivityTimer) clearTimeout(inactivityTimer);
+  inactivityTimer = setTimeout(() => {
+    if (isAuthenticated()) {
+      lockApplicationUI('🔒 Sesión cerrada automáticamente por 60 minutos de inactividad.');
+    }
+  }, SESSION_INACTIVITY_LIMIT_MS);
+}
+
+function unlockApplicationUI() {
+  document.body.classList.remove('auth-locked');
+  const overlay = document.getElementById('authLoginOverlay');
+  if (overlay) overlay.classList.add('hidden');
+
+  const emailEl = document.getElementById('authUserEmailText');
+  if (emailEl && authSession && authSession.email) {
+    emailEl.textContent = authSession.email;
+    emailEl.title = `Sesión activa: ${authSession.email}`;
+  }
+
+  showAuthAlert('');
+  resetInactivityWatchdog();
+
+  // Renovación preventiva del token cada 45 minutos mientras la app esté abierta
+  if (tokenRefreshTimer) clearInterval(tokenRefreshTimer);
+  tokenRefreshTimer = setInterval(() => {
+    if (isAuthenticated()) {
+      refreshIdToken().catch((err) => console.warn('Renovación preventiva de token:', err));
+    }
+  }, 45 * 60 * 1000);
+
+  loadState();
+  renderAll();
+  startCloudSyncLoop();
+}
+
+function lockApplicationUI(reasonMessage = '') {
+  clearAuthSession();
+  document.body.classList.add('auth-locked');
+  const overlay = document.getElementById('authLoginOverlay');
+  if (overlay) overlay.classList.remove('hidden');
+
+  const pwdInput = document.getElementById('authPasswordInput');
+  if (pwdInput) pwdInput.value = '';
+
+  const apiKeyInput = document.getElementById('authLoginApiKeyInput');
+  if (apiKeyInput) apiKeyInput.value = getActiveFirebaseApiKey();
+
+  const details = document.getElementById('authApiConfigDetails');
+  if (details && !getActiveFirebaseApiKey()) {
+    details.open = true;
+  }
+
+  if (reasonMessage) {
+    showAuthAlert(reasonMessage, 'info');
+  }
+}
+
+/* ==========================================================================
+   PERSISTENCIA DINÁMICA EN LA NUBE (FIREBASE) Y POR AÑO ESCOLAR
+   ========================================================================== */
 function updateCloudStatusUI(status, customMessage = '') {
   const dot = document.getElementById('cloudStatusDot');
   const text = document.getElementById('cloudStatusText');
@@ -568,23 +874,32 @@ function updateCloudStatusUI(status, customMessage = '') {
   dot.className = 'cloud-dot';
   if (status === 'connected') {
     dot.classList.add('connected');
-    text.textContent = customMessage || '☁️ Nube Sincronizada';
-    if (banner) banner.textContent = `Conectado y sincronizado en tiempo real (${getActiveFirebaseUrl()})`;
+    text.textContent = customMessage || '🔒 Nube Protegida';
+    if (banner) {
+      banner.textContent = `Conectado con autenticación segura (${authSession ? authSession.email : 'Token activo'}) en ${getActiveFirebaseUrl()}`;
+    }
   } else if (status === 'syncing') {
     dot.classList.add('syncing');
     text.textContent = customMessage || '☁️ Guardando...';
   } else if (status === 'error') {
     dot.classList.add('error');
     text.textContent = customMessage || '☁️ Error de Nube';
-    if (banner) banner.textContent = 'No se pudo conectar a la URL indicada. Verifica que termine en .firebaseio.com y esté en Modo de Prueba.';
+    if (banner) {
+      banner.textContent = 'No se pudo sincronizar. Verifica tu sesión activa y las Reglas de Seguridad en Firebase.';
+    }
   } else {
     dot.classList.add('disconnected');
-    text.textContent = '☁️ Conectar Base de Datos';
-    if (banner) banner.textContent = 'Modo Local — Haz clic en Conectar para sincronizar entre dispositivos.';
+    text.textContent = '☁️ Configurar Base de Datos';
+    if (banner) banner.textContent = 'Sin conexión a la nube — Configura la URL y API Key de Firebase.';
   }
 }
 
 async function pushStateToCloud(year = currentSchoolYear) {
+  if (!isAuthenticated()) {
+    lockApplicationUI('Debes iniciar sesión para guardar cambios en la base de datos.');
+    return false;
+  }
+
   const endpoint = getCloudEndpoint(year);
   if (!endpoint) {
     updateCloudStatusUI('disconnected');
@@ -597,10 +912,11 @@ async function pushStateToCloud(year = currentSchoolYear) {
     const payload = {
       ...state,
       updatedAt: state.updatedAt || Date.now(),
+      updatedBy: authSession ? authSession.email : 'authenticated_user',
       clientId: CLIENT_SESSION_ID
     };
 
-    const res = await fetch(endpoint, {
+    const res = await authenticatedDatabaseFetch(endpoint, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -610,7 +926,7 @@ async function pushStateToCloud(year = currentSchoolYear) {
       throw new Error(`HTTP ${res.status}`);
     }
 
-    updateCloudStatusUI('connected', '☁️ Nube Sincronizada');
+    updateCloudStatusUI('connected', '🔒 Nube Sincronizada');
     return true;
   } catch (err) {
     console.error('Error al guardar en Firebase:', err);
@@ -634,6 +950,11 @@ function updateSaveButtonUI() {
 }
 
 async function commitSaveToDatabase() {
+  if (!isAuthenticated()) {
+    lockApplicationUI('Debes iniciar sesión para guardar cambios.');
+    return;
+  }
+
   state.updatedAt = Date.now();
   state.clientId = CLIENT_SESSION_ID;
   try {
@@ -648,7 +969,7 @@ async function commitSaveToDatabase() {
     if (ok) {
       hasUnsavedChanges = false;
       updateSaveButtonUI();
-      showToast('💾 ¡Cambios guardados en la Base de Datos!', 'success');
+      showToast('💾 ¡Cambios guardados de forma segura en la Base de Datos!', 'success');
     } else {
       showToast('⚠️ Se guardó localmente, pero hubo un problema al subir a la nube.', 'warn');
     }
@@ -660,6 +981,8 @@ async function commitSaveToDatabase() {
 }
 
 async function pullStateFromCloud(year = currentSchoolYear, options = { force: false, silent: false }) {
+  if (!isAuthenticated()) return false;
+
   const endpoint = getCloudEndpoint(year);
   if (!endpoint) {
     updateCloudStatusUI('disconnected');
@@ -673,7 +996,11 @@ async function pullStateFromCloud(year = currentSchoolYear, options = { force: f
     if (!options.silent) {
       updateCloudStatusUI('syncing', '☁️ Sincronizando...');
     }
-    const res = await fetch(`${endpoint}?t=${Date.now()}`, { cache: 'no-store' });
+    const res = await authenticatedDatabaseFetch(
+      endpoint,
+      { cache: 'no-store' },
+      `t=${Date.now()}`
+    );
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
@@ -713,7 +1040,7 @@ async function pullStateFromCloud(year = currentSchoolYear, options = { force: f
       }
     }
 
-    updateCloudStatusUI('connected', '☁️ Nube');
+    updateCloudStatusUI('connected', '🔒 Nube Protegida');
     return true;
   } catch (err) {
     console.error('Error al descargar desde Firebase:', err);
@@ -725,23 +1052,10 @@ async function pullStateFromCloud(year = currentSchoolYear, options = { force: f
 function startCloudSyncLoop() {
   if (cloudSyncTimer) clearInterval(cloudSyncTimer);
   cloudSyncTimer = setInterval(() => {
-    if (getActiveFirebaseUrl() && !isPushingToCloud && !hasUnsavedChanges) {
+    if (isAuthenticated() && getActiveFirebaseUrl() && !isPushingToCloud && !hasUnsavedChanges) {
       pullStateFromCloud(currentSchoolYear, { force: false, silent: true });
     }
   }, 4000);
-
-  window.addEventListener('focus', () => {
-    if (getActiveFirebaseUrl() && !isPushingToCloud && !hasUnsavedChanges) {
-      pullStateFromCloud(currentSchoolYear, { force: false, silent: true });
-    }
-  });
-
-  window.addEventListener('beforeunload', (e) => {
-    if (hasUnsavedChanges) {
-      e.preventDefault();
-      e.returnValue = '';
-    }
-  });
 }
 
 function loadState(year = null) {
@@ -777,7 +1091,7 @@ function loadState(year = null) {
           updatedAt: Number(parsed.updatedAt || 0),
           clientId: parsed.clientId || CLIENT_SESSION_ID
         };
-        if (getActiveFirebaseUrl()) {
+        if (isAuthenticated() && getActiveFirebaseUrl()) {
           pullStateFromCloud(currentSchoolYear, { force: true, silent: true, isInitial: true });
         } else {
           updateCloudStatusUI('disconnected');
@@ -800,7 +1114,7 @@ function loadState(year = null) {
   }
   updateGlobalCounters();
 
-  if (getActiveFirebaseUrl()) {
+  if (isAuthenticated() && getActiveFirebaseUrl()) {
     pullStateFromCloud(currentSchoolYear, { force: true, silent: true, isInitial: true });
   } else {
     updateCloudStatusUI('disconnected');
@@ -808,6 +1122,10 @@ function loadState(year = null) {
 }
 
 function saveState(markUnsaved = true) {
+  if (!isAuthenticated()) {
+    lockApplicationUI('Debes iniciar sesión para realizar modificaciones.');
+    return;
+  }
   updateGlobalCounters();
   if (markUnsaved) {
     hasUnsavedChanges = true;
@@ -2906,14 +3224,18 @@ function initEventListeners() {
     }
   });
 
-  // Eventos de Base de Datos en la Nube (Firebase Realtime Database)
+  // Eventos de Base de Datos en la Nube y Seguridad (Firebase Auth + Realtime Database)
   const cloudModal = document.getElementById('cloudConfigModal');
   const inputFirebaseUrl = document.getElementById('inputFirebaseDbUrl');
+  const inputFirebaseApiKey = document.getElementById('inputFirebaseApiKey');
 
   const openCloudModal = () => {
     if (!cloudModal) return;
     if (inputFirebaseUrl) {
       inputFirebaseUrl.value = getActiveFirebaseUrl();
+    }
+    if (inputFirebaseApiKey) {
+      inputFirebaseApiKey.value = getActiveFirebaseApiKey();
     }
     updateCloudStatusUI(getActiveFirebaseUrl() ? 'connected' : 'disconnected');
     cloudModal.classList.remove('hidden');
@@ -2932,22 +3254,42 @@ function initEventListeners() {
   const btnCancelCloud = document.getElementById('btnCancelCloudModal');
   if (btnCancelCloud) btnCancelCloud.addEventListener('click', closeCloudModal);
 
+  const btnCopyRules = document.getElementById('btnCopySecurityRules');
+  if (btnCopyRules) {
+    btnCopyRules.addEventListener('click', async () => {
+      const codeEl = document.getElementById('firebaseSecureRulesCode');
+      if (!codeEl) return;
+      try {
+        await navigator.clipboard.writeText(codeEl.textContent);
+        showToast('📋 Reglas seguras copiadas al portapapeles. Pégalas en Firebase Console ➔ Reglas.', 'success');
+      } catch (err) {
+        showToast('Selecciona el texto del recuadro negro y cópialo con Ctrl+C.', 'info');
+      }
+    });
+  }
+
   const btnSaveCloud = document.getElementById('btnSaveCloudUrl');
   if (btnSaveCloud) {
     btnSaveCloud.addEventListener('click', async () => {
       const rawUrl = (inputFirebaseUrl ? inputFirebaseUrl.value : '').trim();
+      const rawApiKey = (inputFirebaseApiKey ? inputFirebaseApiKey.value : '').trim();
       if (!rawUrl) {
         showToast('Ingresa la URL de tu Firebase Realtime Database.', 'warn');
         return;
       }
       const cleaned = rawUrl.replace(/\/+$/, '').replace(/\.json$/i, '');
       localStorage.setItem(FIREBASE_URL_STORAGE_KEY, cleaned);
+      if (rawApiKey) {
+        localStorage.setItem(FIREBASE_API_KEY_STORAGE_KEY, rawApiKey);
+        const loginApiKeyInput = document.getElementById('authLoginApiKeyInput');
+        if (loginApiKeyInput) loginApiKeyInput.value = rawApiKey;
+      }
       const ok = await pullStateFromCloud(currentSchoolYear, { force: true, silent: false });
       if (ok) {
-        showToast('☁️ Base de datos en la nube conectada y sincronizada.', 'success');
+        showToast('🔒 Base de datos en la nube conectada y sincronizada de forma segura.', 'success');
         closeCloudModal();
       } else {
-        showToast('⚠️ No se pudo conectar a esa URL. Verifica que esté en Modo de Prueba (Test Mode).', 'error');
+        showToast('⚠️ No se pudo sincronizar. Verifica tu sesión y las Reglas de Seguridad.', 'error');
       }
     });
   }
@@ -2967,11 +3309,136 @@ function initEventListeners() {
   if (btnDisconnectCloud) {
     btnDisconnectCloud.addEventListener('click', () => {
       localStorage.removeItem(FIREBASE_URL_STORAGE_KEY);
-      updateCloudStatusUI('disconnected');
-      if (inputFirebaseUrl) inputFirebaseUrl.value = '';
-      showToast('Base de datos desconectada en este navegador.', 'info');
+      if (inputFirebaseUrl) inputFirebaseUrl.value = getActiveFirebaseUrl();
+      showToast('URL restablecida al valor institucional por defecto.', 'info');
     });
   }
+
+  // ==================== EVENTOS DE LOGIN, SESIÓN Y PROTECCIÓN ====================
+  const authForm = document.getElementById('authLoginForm');
+  const emailInput = document.getElementById('authEmailInput');
+  const pwdInput = document.getElementById('authPasswordInput');
+  const rememberCheck = document.getElementById('authRememberSession');
+  const btnSubmitLogin = document.getElementById('btnSubmitLogin');
+  const btnTogglePwd = document.getElementById('btnTogglePasswordView');
+  const btnForgotPwd = document.getElementById('btnForgotPassword');
+  const btnSaveLoginApiKey = document.getElementById('btnSaveLoginApiKey');
+  const authLoginApiKeyInput = document.getElementById('authLoginApiKeyInput');
+  const btnLogout = document.getElementById('btnLogout');
+
+  if (authLoginApiKeyInput) {
+    authLoginApiKeyInput.value = getActiveFirebaseApiKey();
+  }
+
+  if (btnSaveLoginApiKey) {
+    btnSaveLoginApiKey.addEventListener('click', () => {
+      const val = (authLoginApiKeyInput ? authLoginApiKeyInput.value : '').trim();
+      if (!val) {
+        showAuthAlert('Ingresa una Web API Key válida (comienza con AIzaSy...).', 'error');
+        return;
+      }
+      localStorage.setItem(FIREBASE_API_KEY_STORAGE_KEY, val);
+      showAuthAlert('✅ Firebase Web API Key guardada en este navegador. Ahora puedes iniciar sesión.', 'info');
+      const details = document.getElementById('authApiConfigDetails');
+      if (details) details.open = false;
+    });
+  }
+
+  if (btnTogglePwd && pwdInput) {
+    btnTogglePwd.addEventListener('click', () => {
+      const isPwd = pwdInput.type === 'password';
+      pwdInput.type = isPwd ? 'text' : 'password';
+      btnTogglePwd.textContent = isPwd ? '🙈 Ocultar' : '👁️ Mostrar';
+    });
+  }
+
+  if (btnForgotPwd) {
+    btnForgotPwd.addEventListener('click', async () => {
+      const email = (emailInput ? emailInput.value : '').trim();
+      if (!email) {
+        showAuthAlert('Escribe primero tu correo institucional arriba para enviarte el enlace de recuperación.', 'error');
+        if (emailInput) emailInput.focus();
+        return;
+      }
+      try {
+        showAuthAlert('Enviando correo de recuperación...', 'info');
+        await sendPasswordResetEmail(email);
+        showAuthAlert(`📧 Se envió un enlace de restablecimiento de contraseña a ${email}. Revisa tu bandeja de entrada.`, 'info');
+      } catch (err) {
+        showAuthAlert(err.message || 'No se pudo enviar el correo de recuperación.', 'error');
+      }
+    });
+  }
+
+  if (authForm) {
+    authForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      showAuthAlert('');
+
+      // Si el usuario escribió la API Key en el campo desplegable sin presionar "Guardar API Key", la guardamos automáticamente
+      if (authLoginApiKeyInput && authLoginApiKeyInput.value.trim()) {
+        localStorage.setItem(FIREBASE_API_KEY_STORAGE_KEY, authLoginApiKeyInput.value.trim());
+      }
+
+      const email = (emailInput ? emailInput.value : '').trim();
+      const password = pwdInput ? pwdInput.value : '';
+      const remember = rememberCheck ? rememberCheck.checked : true;
+
+      if (!email || !password) {
+        showAuthAlert('Completa tu correo institucional y contraseña.', 'error');
+        return;
+      }
+
+      try {
+        if (btnSubmitLogin) {
+          btnSubmitLogin.disabled = true;
+          btnSubmitLogin.textContent = '⏳ Verificando credenciales...';
+        }
+        await signInWithEmailPassword(email, password, remember);
+        unlockApplicationUI();
+        showToast(`🔓 Bienvenido(a), ${email}`, 'success');
+      } catch (err) {
+        showAuthAlert(err.message || 'Error al iniciar sesión.', 'error');
+      } finally {
+        if (btnSubmitLogin) {
+          btnSubmitLogin.disabled = false;
+          btnSubmitLogin.textContent = '🔐 Iniciar Sesión Segura';
+        }
+      }
+    });
+  }
+
+  if (btnLogout) {
+    btnLogout.addEventListener('click', () => {
+      if (hasUnsavedChanges) {
+        const confirmExit = confirm('Tienes cambios sin guardar en la Base de Datos. ¿Deseas cerrar sesión de todas formas?');
+        if (!confirmExit) return;
+      }
+      lockApplicationUI('Has cerrado tu sesión de forma segura.');
+    });
+  }
+
+  // Monitoreo de actividad para cierre automático de sesión por inactividad (60 min) y sincronización al volver a la pestaña
+  ['mousemove', 'keydown', 'click', 'touchstart'].forEach((evtName) => {
+    window.addEventListener(evtName, () => {
+      if (isAuthenticated()) {
+        resetInactivityWatchdog();
+      }
+    }, { passive: true });
+  });
+
+  window.addEventListener('focus', () => {
+    if (isAuthenticated() && getActiveFirebaseUrl() && !isPushingToCloud && !hasUnsavedChanges) {
+      pullStateFromCloud(currentSchoolYear, { force: false, silent: true });
+    }
+  });
+
+  window.addEventListener('beforeunload', (e) => {
+    if (hasUnsavedChanges) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
 
   document.getElementById('btnExportCSV').addEventListener('click', exportToCSV);
   document.getElementById('btnExportJSON').addEventListener('click', exportToJSON);
@@ -3007,9 +3474,24 @@ function resetRequirementForm() {
   document.getElementById('btnCancelReqEdit').classList.add('hidden');
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  loadState();
+async function bootstrapAuthAndApp() {
   initEventListeners();
-  renderAll();
-  startCloudSyncLoop();
+
+  const stored = loadStoredAuthSession();
+  if (stored && stored.idToken && stored.refreshToken) {
+    authSession = stored;
+    try {
+      await ensureValidIdToken();
+      unlockApplicationUI();
+      return;
+    } catch (err) {
+      console.warn('La sesión guardada expiró o fue revocada:', err);
+    }
+  }
+
+  lockApplicationUI();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  bootstrapAuthAndApp();
 });

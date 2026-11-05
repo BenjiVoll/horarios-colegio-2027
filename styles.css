@@ -1632,6 +1632,234 @@ body {
   margin-bottom: 0.35rem;
 }
 
+.security-rules-pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 0.65rem 0.85rem;
+  border-radius: 7px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  overflow-x: auto;
+  border: 1px solid #334155;
+}
+
+/* ==========================================================================
+   SISTEMA DE AUTENTICACIÓN, SESIONES Y BLOQUEO DE SEGURIDAD
+   ========================================================================== */
+body.auth-locked {
+  overflow: hidden;
+}
+
+body.auth-locked .topbar,
+body.auth-locked .main-nav,
+body.auth-locked .main-container {
+  filter: blur(8px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3500;
+  background: radial-gradient(circle at top, rgba(33, 83, 135, 0.92), rgba(15, 23, 42, 0.97));
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 445px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.55);
+  border-top: 5px solid #d69e2e;
+  overflow: hidden;
+  animation: slideIn 0.22s ease;
+}
+
+.auth-card-header {
+  padding: 1.5rem 1.6rem 1rem;
+  text-align: center;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.auth-logo {
+  height: 64px;
+  width: auto;
+  object-fit: contain;
+  margin-bottom: 0.55rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
+}
+
+.auth-card-header h2 {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #1a202c;
+  margin: 0;
+}
+
+.auth-subtitle {
+  font-size: 0.82rem;
+  color: #4a5568;
+  margin-top: 0.2rem;
+  font-weight: 500;
+}
+
+.auth-security-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.65rem;
+  padding: 0.25rem 0.7rem;
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+
+.auth-form {
+  padding: 1.35rem 1.6rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.auth-alert {
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.81rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.auth-alert-error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.auth-alert-info {
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+.auth-remember-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.79rem;
+}
+
+.auth-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #334155;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-link-inline {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 0.77rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.btn-link-inline:hover {
+  color: var(--primary-hover);
+}
+
+.auth-submit-btn {
+  padding: 0.68rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  margin-top: 0.15rem;
+}
+
+.auth-api-config-details {
+  margin-top: 0.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.78rem;
+}
+
+.auth-api-config-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #334155;
+  user-select: none;
+}
+
+.auth-api-config-body {
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.auth-card-footer {
+  padding: 0.75rem 1.25rem;
+  background: #f1f5f9;
+  border-top: 1px solid #e2e8f0;
+  text-align: center;
+  font-size: 0.73rem;
+  color: #64748b;
+}
+
+/* Indicador de usuario autenticado en Topbar */
+.session-user-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 0.22rem 0.35rem 0.22rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  color: #f8fafc;
+}
+
+.session-email-text {
+  max-width: 165px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.btn-logout-pill {
+  background: rgba(239, 68, 68, 0.85);
+  color: #ffffff;
+  border: none;
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-logout-pill:hover {
+  background: #dc2626;
+}
+
 .print-header {
   display: none;
 }
