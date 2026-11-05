@@ -307,12 +307,18 @@
               <select id="selectViewTeacher" class="form-control form-control-lg"></select>
             </div>
             <div id="teacherViewStats" class="teacher-stats-pills"></div>
-            <div class="no-print">
-              <button class="btn btn-outline btn-sm" id="btnToggleAvailabilityMode">
+            <div class="no-print" style="display:flex; gap:0.45rem; flex-wrap:wrap;">
+              <button class="btn btn-outline btn-sm" id="btnOpenTeacherFichaFromView" type="button" title="Abrir Ficha de Carga Horaria y Proporción 65/35">
+                📋 Ficha 65/35
+              </button>
+              <button class="btn btn-outline btn-sm" id="btnToggleAvailabilityMode" type="button">
                 🔒 Marcar Horas No Disponibles
               </button>
             </div>
           </div>
+
+          <!-- Barra interactiva de Asignaturas y Cursos a cargo de este Profesor -->
+          <div id="teacherCoursesSummaryBar" class="teacher-courses-bar no-print"></div>
 
           <div id="availabilityModeBanner" class="availability-banner hidden no-print">
             <span><strong>Modo Disponibilidad Activo:</strong> Haz clic en cualquier bloque libre para marcar o desmarcar que el profesor <strong>NO puede hacer clases en esa hora</strong>.</span>
@@ -361,27 +367,35 @@
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="teacherMaxHoursInput">Horas Lectivas Máx. (Pedag.)</label>
-                <input type="number" id="teacherMaxHoursInput" class="form-control" min="1" max="44" value="30" required />
+                <label for="teacherMaxHoursInput" title="Tope máximo de horas pedagógicas en cursos 1º a 8º">Hrs Máx. Cursos (1º-8º)</label>
+                <input type="number" id="teacherMaxHoursInput" class="form-control" min="0" max="44" value="30" required />
               </div>
               <div class="form-group">
-                <label for="teacherSepHoursInput">Horas SEP (Talleres/Co-doc.)</label>
-                <input type="number" id="teacherSepHoursInput" class="form-control" min="0" max="30" value="0" />
+                <label for="teacherOtherLectivasInput" title="Horas lectivas fuera de 1º-8º (Ej: Kínder, Coordinación CRA)">Otras Lectivas (Kº/CRA)</label>
+                <input type="number" id="teacherOtherLectivasInput" class="form-control" min="0" max="44" value="0" />
               </div>
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="teacherContractChronoInput">Jornada Semanal (Hrs Cronológicas)</label>
-                <input type="number" id="teacherContractChronoInput" class="form-control" min="1" max="44" value="38" />
+                <label for="teacherSepHoursInput">Horas SEP (Talleres/Co-doc.)</label>
+                <input type="number" id="teacherSepHoursInput" class="form-control" min="0" max="30" value="0" />
               </div>
               <div class="form-group">
-                <label for="teacherPieHoursInput">Horas PIE / Otros</label>
-                <input type="text" id="teacherPieHoursInput" class="form-control" placeholder="Ej: 3 PIE" />
+                <label for="teacherContractChronoInput">Contrato (Hrs Cronológicas)</label>
+                <input type="number" id="teacherContractChronoInput" class="form-control" min="1" max="44" value="38" required />
               </div>
+            </div>
+            <div class="form-group">
+              <label for="teacherPieHoursInput">Horas PIE / Observación Contrato</label>
+              <input type="text" id="teacherPieHoursInput" class="form-control" placeholder="Ej: 3 PIE" />
             </div>
             <div class="form-group">
               <label for="teacherSepDetailInput">Detalle Actividades SEP / Otras Lectivas (Kº, CRA, Co-docencia)</label>
               <textarea id="teacherSepDetailInput" class="form-control" rows="2" placeholder="Ej: Co-docencia Matemática 4º (4h), Taller Fútbol (2h)"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="teacherNonTeachingInput">Detalle Actividades No Lectivas (35%)</label>
+              <input type="text" id="teacherNonTeachingInput" class="form-control" placeholder="Ej: Planificación 40% | Consejo Profesores | Atención Apoderados" />
             </div>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" id="btnSaveTeacher">Guardar Profesor</button>
@@ -394,8 +408,8 @@
         <div class="card">
           <div class="card-header-flex">
             <div>
-              <h2>Cuadro de Horas Lectivas, SEP y No Lectivas (Proporción 65/35)</h2>
-              <p class="helper-text">Calcula en vivo las horas asignadas en los cursos (1º a 8º) y las cruza con las horas lectivas, SEP y jornada semanal de cada docente.</p>
+              <h2>Cuadro de Horas Lectivas, SEP y No Lectivas (Proporción Legal 65/35)</h2>
+              <p class="helper-text">Cruza en tiempo real las horas asignadas en cursos (1º a 8º), horas Kínder/CRA y SEP con la jornada cronológica y el cálculo legal 65% Lectivo / 35% No Lectivo.</p>
             </div>
             <input type="search" id="searchTeacherInput" class="form-control form-control-sm no-print" placeholder="🔍 Buscar profesor o sigla..." />
           </div>
@@ -406,11 +420,12 @@
                   <th>Sigla</th>
                   <th>Profesor(a)</th>
                   <th>Jefatura / Especialidad</th>
-                  <th>Hrs Plan Cursos (1º-8º)</th>
-                  <th>Hrs en Horario (1º-8º)</th>
-                  <th>Otras Lectivas / SEP</th>
-                  <th>Total Aula (Pedag.)</th>
-                  <th>Jornada Cronológica</th>
+                  <th>Hrs Plan (1º-8º)</th>
+                  <th>En Horario (1º-8º)</th>
+                  <th>Kº/CRA y SEP</th>
+                  <th>Total Aula (Pedag. / Cron.)</th>
+                  <th>Hrs No Lectivas y 65/35</th>
+                  <th>Contrato</th>
                   <th class="no-print">Acciones</th>
                 </tr>
               </thead>
@@ -664,6 +679,9 @@
               <button class="btn btn-outline btn-sm" id="btnOpenCloudModal" type="button" title="Ver estado de conexión con Firebase Realtime Database">
                 <span class="cloud-dot connected" id="cloudStatusDot"></span>
                 <span id="cloudStatusText">☁️ Estado de Base de Datos</span>
+              </button>
+              <button class="btn btn-outline btn-sm" id="btnLoadBaseSchedule" type="button" title="Cargar la propuesta de horario base completo (38/38 bloques) sin topones">
+                📋 Cargar Horario Base Propuesto (38/38)
               </button>
               <button class="btn btn-danger-outline btn-sm" id="btnResetYearData" type="button" title="Reiniciar el tablero de horarios a cero (0/38 bloques) manteniendo cursos, asignaturas y profesores">
                 🧹 Reiniciar Todo el Año a Cero (0/38)

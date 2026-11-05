@@ -51,6 +51,7 @@ let ui = {
   selectedPlanCourseId: null,
   selectedPaletteReqId: null,
   activeViewTeacherId: null,
+  selectedTeacherViewReqId: null,
   availabilityEditMode: false,
   modalTargetSlot: null,
   panoramaActiveDay: '0', // '0'..'4' o 'WEEK'
@@ -1409,10 +1410,11 @@ function assignRequirementToSlot(courseId, dayIndex, periodId, reqId, silent = f
 
   if (!teacher.isMultiCourseWorkshop) {
     const currentTeacherHours = getAssignedHoursForTeacher(teacher.id, targetKey);
-    if (currentTeacherHours >= teacher.maxHours) {
+    const effectiveMaxHours = Math.max(Number(teacher.maxHours || 0), getPlannedHoursForTeacher(teacher.id));
+    if (currentTeacherHours >= effectiveMaxHours) {
       if (!silent) {
         showToast(
-          `⚠️ Límite de horas lectivas: ${teacher.name} (${teacher.initials}) ya tiene ${currentTeacherHours}/${teacher.maxHours} hrs en cursos.`,
+          `⚠️ Límite de horas lectivas: ${teacher.name} (${teacher.initials}) ya tiene ${currentTeacherHours}/${effectiveMaxHours} hrs en cursos.`,
           'error'
         );
       }
@@ -1496,7 +1498,8 @@ function autoScheduleForCourse(courseId, notify = true) {
 
           const teacher = state.teachers.find((t) => t.id === req.teacherId);
           if (!teacher) continue;
-          if (!teacher.isMultiCourseWorkshop && getAssignedHoursForTeacher(teacher.id) >= teacher.maxHours) {
+          const effectiveMaxHours = Math.max(Number(teacher.maxHours || 0), getPlannedHoursForTeacher(teacher.id));
+          if (!teacher.isMultiCourseWorkshop && getAssignedHoursForTeacher(teacher.id) >= effectiveMaxHours) {
             continue;
           }
 
@@ -2298,7 +2301,7 @@ function renderUnifiedWeeklySabana(container) {
 }
 
 /* --------------------------------------------------------------------------
-   TAB 3: HORARIO INDIVIDUAL POR PROFESOR
+   TAB 3: HORARIO INDIVIDUAL POR PROFESOR (INTERACTIVO)
    -------------------------------------------------------------------------- */
 function renderTeacherViewTab() {
   const select = document.getElementById('selectViewTeacher');
@@ -2315,18 +2318,83 @@ function renderTeacherViewTab() {
   const teacher = state.teachers.find((t) => t.id === ui.activeViewTeacherId);
   if (!teacher) return;
 
+  // Validar que la asignatura seleccionada en esta vista pertenezca al profesor activo
+  if (
+    ui.selectedTeacherViewReqId &&
+    !state.requirements.some((r) => r.id === ui.selectedTeacherViewReqId && r.teacherId === teacher.id)
+  ) {
+    ui.selectedTeacherViewReqId = null;
+  }
+
   const assignedInCourses = getAssignedHoursForTeacher(teacher.id);
   const plannedInCourses = getPlannedHoursForTeacher(teacher.id);
   const otherLectivas = Number(teacher.otherLectivasHours || 0);
   const sepHrs = Number(teacher.sepHours || 0);
+  const totalAulaPedag = assignedInCourses + otherLectivas + sepHrs;
+  const totalAulaChrono = (totalAulaPedag * 45) / 60;
+  const contractChrono = Number(teacher.contractChrono || 38);
+  const nonTeachingChrono = Math.max(0, contractChrono - totalAulaChrono);
 
   document.getElementById('teacherViewStats').innerHTML = `
     <span class="stat-pill">🏷️ Sigla: <strong>${escapeHtml(teacher.initials)}</strong></span>
-    <span class="stat-pill">🏫 En Horario (1º-8º): <strong>${assignedInCourses} / ${plannedInCourses} hrs</strong></span>
-    ${otherLectivas > 0 ? `<span class="stat-pill">📚 Otras Lectivas (Kº/CRA): <strong>+${otherLectivas} hrs</strong></span>` : ''}
-    ${sepHrs > 0 ? `<span class="stat-pill">🎯 Horas SEP: <strong>+${sepHrs} hrs</strong></span>` : ''}
-    <span class="stat-pill">⏱️ Jornada Semanal: <strong>${teacher.contractChrono || 38} hrs cron.</strong></span>
+    <span class="stat-pill">🏫 Cursos (1º-8º): <strong>${assignedInCourses} / ${plannedInCourses} hrs</strong></span>
+    ${otherLectivas > 0 ? `<span class="stat-pill">📚 Kº/CRA: <strong>+${otherLectivas} hrs</strong></span>` : ''}
+    ${sepHrs > 0 ? `<span class="stat-pill">🎯 SEP: <strong>+${sepHrs} hrs</strong></span>` : ''}
+    <span class="stat-pill" title="Horas No Lectivas Cronológicas disponibles según contrato">📋 No Lectivas: <strong>${nonTeachingChrono.toFixed(1)}h cron.</strong></span>
+    <span class="stat-pill">⏱️ Contrato: <strong>${contractChrono}h cron.</strong></span>
   `;
+
+  // Barra interactiva con todas las asignaturas y cursos de este profesor
+  const coursesBar = document.getElementById('teacherCoursesSummaryBar');
+  if (coursesBar) {
+    const teacherReqs = state.requirements.filter((r) => r.teacherId === teacher.id);
+    if (teacherReqs.length === 0) {
+      coursesBar.innerHTML = `<span class="helper-text" style="padding:0;">Este docente aún no tiene asignaturas asignadas en el Plan de Estudio (1º a 8º).</span>`;
+    } else {
+      const chipsHtml = teacherReqs
+        .map((r) => {
+          const c = state.courses.find((x) => x.id === r.courseId);
+          const asg = getAssignedHoursForRequirement(r.id);
+          const done = asg >= r.hoursPerWeek;
+          const isSel = ui.selectedTeacherViewReqId === r.id;
+          return `
+            <button type="button"
+                    class="teacher-req-chip ${isSel ? 'selected' : ''} ${done ? 'done' : 'pending'}"
+                    data-req-id="${r.id}"
+                    title="Haz clic aquí y luego en un bloque libre del calendario para asignar esta clase directamente">
+              <strong>${c ? escapeHtml(c.short || c.name) : ''}</strong> · ${escapeHtml(r.shortCode || r.subject)}
+              <span class="chip-hrs">${asg}/${r.hoursPerWeek}h</span>
+            </button>
+          `;
+        })
+        .join('');
+
+      const activeReq = state.requirements.find((r) => r.id === ui.selectedTeacherViewReqId);
+      const activeCourse = activeReq ? state.courses.find((c) => c.id === activeReq.courseId) : null;
+
+      coursesBar.innerHTML = `
+        <div class="teacher-courses-bar-top">
+          <span><strong>📚 Cursos de ${escapeHtml(teacher.name)}:</strong> ${
+            activeReq
+              ? `<span style="color:#1e40af; font-weight:700;">📌 Asignando ${escapeHtml(activeReq.subject)} en ${
+                  activeCourse ? escapeHtml(activeCourse.name) : ''
+                } (Haz clic en un bloque libre abajo)</span>`
+              : 'Haz clic en una asignatura pendiente abajo para ubicarla directo desde el horario del profesor:'
+          }</span>
+        </div>
+        <div class="teacher-req-chips-wrap">${chipsHtml}</div>
+      `;
+
+      coursesBar.querySelectorAll('.teacher-req-chip').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const rId = btn.dataset.reqId;
+          ui.availabilityEditMode = false;
+          ui.selectedTeacherViewReqId = ui.selectedTeacherViewReqId === rId ? null : rId;
+          renderTeacherViewTab();
+        });
+      });
+    }
+  }
 
   document.getElementById('availabilityModeBanner').classList.toggle('hidden', !ui.availabilityEditMode);
 
@@ -2337,6 +2405,10 @@ function renderTeacherViewTab() {
     `<th class="time-col">Bloque / Hora</th>` +
     DAYS.map((d) => `<th>${d.name}</th>`).join('');
   tbody.innerHTML = '';
+
+  const selectedReqForTeacher = ui.selectedTeacherViewReqId
+    ? state.requirements.find((r) => r.id === ui.selectedTeacherViewReqId)
+    : null;
 
   state.periods.forEach((period) => {
     const tr = document.createElement('tr');
@@ -2372,18 +2444,42 @@ function renderTeacherViewTab() {
       const slots = findTeacherAssignmentsAtSlot(teacher.id, day.index, period.id);
       const unavailable = isTeacherUnavailable(teacher.id, day.index, period.id);
 
+      // Si hay una asignatura seleccionada de un curso, verificar si ese curso ya está ocupado con otro profesor a esta hora
+      let targetCourseOccupiedByOther = null;
+      if (selectedReqForTeacher && slots.length === 0) {
+        const existingInCourse = state.assignments[slotKey(selectedReqForTeacher.courseId, day.index, period.id)];
+        if (existingInCourse) {
+          targetCourseOccupiedByOther = existingInCourse;
+        }
+      }
+
       if (slots.length > 0) {
         const bg = hexToRgba(teacher.color, 0.16);
         const coursesNames = slots
           .map((s) => state.courses.find((c) => c.id === s.courseId)?.short || '')
           .join(', ');
-        const firstSubj = slots[0].shortCode || slots[0].subject;
+        const firstSubj = slots[0].subject || slots[0].shortCode;
+        const firstSlot = slots[0];
         td.innerHTML = `
-          <div class="assigned-block" style="border-left-color:${teacher.color}; background:${bg}; cursor:default;">
-            <div class="block-subject">${escapeHtml(firstSubj)} (${escapeHtml(coursesNames)})</div>
-            <div class="block-teacher">🏫 Curso: ${escapeHtml(coursesNames)}</div>
+          <div class="assigned-block" style="border-left-color:${teacher.color}; background:${bg};" title="Haz clic para abrir el curso ${escapeHtml(coursesNames)}">
+            ${
+              slots.length === 1
+                ? `<button type="button" class="block-remove-btn no-print" title="Quitar este bloque de ${escapeHtml(coursesNames)}">✕</button>`
+                : ''
+            }
+            <div class="block-subject">${escapeHtml(firstSubj)}</div>
+            <div class="block-teacher">🏫 Curso: <strong>${escapeHtml(coursesNames)}</strong></div>
           </div>
         `;
+
+        const rmBtn = td.querySelector('.block-remove-btn');
+        if (rmBtn && firstSlot) {
+          rmBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeSlotAssignment(firstSlot.courseId, day.index, period.id);
+            renderAll();
+          });
+        }
       } else if (unavailable) {
         td.classList.add('slot-unavailable-preview');
         td.innerHTML = `
@@ -2391,29 +2487,70 @@ function renderTeacherViewTab() {
             🔒 No Disponible ${ui.availabilityEditMode ? '(Clic para liberar)' : ''}
           </div>
         `;
+      } else if (targetCourseOccupiedByOther) {
+        const targetCourse = state.courses.find((c) => c.id === selectedReqForTeacher.courseId);
+        const otherTeacher = state.teachers.find((t) => t.id === targetCourseOccupiedByOther.teacherId);
+        td.classList.add('slot-conflict-preview');
+        td.innerHTML = `
+          <div class="conflict-warning-chip">
+            <strong>🏫 ${targetCourse ? escapeHtml(targetCourse.short) : ''} ocupado</strong>
+            <span>Con ${escapeHtml(targetCourseOccupiedByOther.shortCode)} (${otherTeacher ? escapeHtml(otherTeacher.initials) : ''})</span>
+          </div>
+        `;
       } else {
         td.innerHTML = `
           <div class="empty-slot-placeholder">
-            ${ui.availabilityEditMode ? 'Clic para bloquear' : 'Hora No Lectiva / Libre'}
+            ${
+              ui.availabilityEditMode
+                ? '🔒 Clic para bloquear'
+                : selectedReqForTeacher
+                ? '+ Asignar aquí'
+                : 'Hora No Lectiva / Libre'
+            }
           </div>
         `;
       }
 
       td.addEventListener('click', () => {
-        if (!ui.availabilityEditMode) return;
-        if (slots.length > 0) {
-          showToast('Este bloque tiene una clase asignada. Quita la clase primero si deseas bloquearlo.', 'warn');
+        if (ui.availabilityEditMode) {
+          if (slots.length > 0) {
+            showToast('Este bloque tiene una clase asignada. Quita la clase primero si deseas bloquearlo.', 'warn');
+            return;
+          }
+          pushUndoSnapshot();
+          const uKey = unavailableKey(teacher.id, day.index, period.id);
+          if (state.teacherUnavailable[uKey]) {
+            delete state.teacherUnavailable[uKey];
+          } else {
+            state.teacherUnavailable[uKey] = true;
+          }
+          saveState();
+          renderAll();
           return;
         }
-        pushUndoSnapshot();
-        const uKey = unavailableKey(teacher.id, day.index, period.id);
-        if (state.teacherUnavailable[uKey]) {
-          delete state.teacherUnavailable[uKey];
-        } else {
-          state.teacherUnavailable[uKey] = true;
+
+        // Si el usuario seleccionó una asignatura pendiente del profesor y hace clic en un bloque libre
+        if (selectedReqForTeacher && slots.length === 0) {
+          if (targetCourseOccupiedByOther) {
+            const targetCourse = state.courses.find((c) => c.id === selectedReqForTeacher.courseId);
+            showToast(
+              `⚠️ El curso ${targetCourse ? targetCourse.name : ''} ya tiene asignado ${targetCourseOccupiedByOther.subject} en ese bloque.`,
+              'warn'
+            );
+            return;
+          }
+          if (assignRequirementToSlot(selectedReqForTeacher.courseId, day.index, period.id, selectedReqForTeacher.id, false)) {
+            renderAll();
+          }
+          return;
         }
-        saveState();
-        renderAll();
+
+        // Si hace clic en un bloque ya asignado, ir al horario de ese curso
+        if (slots.length > 0) {
+          ui.activeCourseId = slots[0].courseId;
+          switchTab('tab-calendario');
+          renderAll();
+        }
       });
 
       tr.appendChild(td);
@@ -2445,6 +2582,12 @@ function renderTeachersManagementTab() {
     const sepHours = Number(t.sepHours || 0);
     const totalLectivas = scheduledCourses + otherLectivas;
     const totalAulaPedag = totalLectivas + sepHours;
+    const totalAulaChrono = (totalAulaPedag * 45) / 60;
+    const contractChrono = Number(t.contractChrono || 38);
+    const nonTeachingChrono = Math.max(0, contractChrono - totalAulaChrono);
+    const pctLectivo = contractChrono > 0 ? Math.round((totalAulaChrono / contractChrono) * 100) : 0;
+    const pctNoLectivo = Math.max(0, 100 - pctLectivo);
+    const exceeds65 = !t.isMultiCourseWorkshop && pctLectivo > 66;
 
     const isComplete = scheduledCourses === plannedCourses;
 
@@ -2468,10 +2611,16 @@ function renderTeachersManagementTab() {
       </td>
       <td>
         <strong>${totalAulaPedag} hrs pedag.</strong>
-        <div style="font-size:0.73rem; color:#64748b;">(${(totalAulaPedag * 0.75).toFixed(2)} hrs cron.)</div>
+        <div style="font-size:0.73rem; color:#64748b;">(${totalAulaChrono.toFixed(2)} hrs cron.)</div>
       </td>
       <td>
-        <strong>${t.contractChrono || 38} hrs</strong>
+        <div><strong>${nonTeachingChrono.toFixed(2)} hrs cron.</strong> no lectivas</div>
+        <span class="badge-pill ${exceeds65 ? 'badge-danger' : 'badge-ok'}" style="margin-top:2px; font-size:0.7rem;" title="Proporción horas lectivas / no lectivas respecto al contrato">
+          ${pctLectivo}% Aula / ${pctNoLectivo}% No Lect.
+        </span>
+      </td>
+      <td>
+        <strong>${contractChrono} hrs</strong>
         ${t.pieInfo ? `<span class="badge-pill" style="margin-left:4px;">${escapeHtml(t.pieInfo)}</span>` : ''}
       </td>
       <td class="no-print">
@@ -2501,12 +2650,17 @@ function renderTeachersManagementTab() {
       document.getElementById('teacherNameInput').value = t.name;
       document.getElementById('teacherSpecialtyInput').value = t.specialty;
       document.getElementById('teacherMaxHoursInput').value = t.maxHours;
+      const otherInput = document.getElementById('teacherOtherLectivasInput');
+      if (otherInput) otherInput.value = t.otherLectivasHours || 0;
       document.getElementById('teacherSepHoursInput').value = t.sepHours || 0;
       document.getElementById('teacherContractChronoInput').value = t.contractChrono || 38;
       document.getElementById('teacherPieHoursInput').value = t.pieInfo || '';
       document.getElementById('teacherSepDetailInput').value = t.sepDetail || '';
+      const nonTeachInput = document.getElementById('teacherNonTeachingInput');
+      if (nonTeachInput) nonTeachInput.value = t.nonTeachingDetail || '';
       document.getElementById('teacherColorInput').value = t.color;
       document.getElementById('btnCancelTeacherEdit').classList.remove('hidden');
+      document.getElementById('teacherForm').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
 
     tr.querySelector('.btn-del-t').addEventListener('click', () => {
@@ -2538,6 +2692,10 @@ function openTeacherDetailModal(teacherId) {
   const sepHours = Number(teacher.sepHours || 0);
   const totalPedag = scheduledCourses + otherLectivas + sepHours;
   const totalLectivasChrono = (totalPedag * 45) / 60;
+  const contractChrono = Number(teacher.contractChrono || 38);
+  const nonTeachingChrono = Math.max(0, contractChrono - totalLectivasChrono);
+  const pctLectivo = contractChrono > 0 ? Math.round((totalLectivasChrono / contractChrono) * 100) : 0;
+  const pctNoLectivo = Math.max(0, 100 - pctLectivo);
 
   const reqRows = teacherReqs
     .map((r) => {
@@ -2559,7 +2717,7 @@ function openTeacherDetailModal(teacherId) {
       <div style="background:#f8fafc; padding:0.75rem; border-radius:8px; border:1px solid #e2e8f0;">
         <div><strong>Profesor(a):</strong> ${escapeHtml(teacher.name)} (${escapeHtml(teacher.initials)})</div>
         <div><strong>Especialidad / Jefatura:</strong> ${escapeHtml(teacher.specialty)}</div>
-        <div><strong>Jornada Semanal:</strong> ${teacher.contractChrono || 38} hrs cronológicas ${
+        <div><strong>Jornada Semanal de Contrato:</strong> ${contractChrono} hrs cronológicas ${
     teacher.pieInfo ? `(${escapeHtml(teacher.pieInfo)})` : ''
   }</div>
       </div>
@@ -2582,15 +2740,19 @@ function openTeacherDetailModal(teacherId) {
       </div>
 
       <div style="background:#eff6ff; padding:0.75rem; border-radius:8px; border:1px solid #bfdbfe; font-size:0.84rem;">
-        <strong>II. Horas SEP / Co-docencia / Otras Lectivas:</strong>
+        <strong>II. Horas SEP / Co-docencia / Otras Lectivas (${otherLectivas + sepHours} hrs pedag.):</strong>
         <p style="margin-top:0.25rem;">${escapeHtml(teacher.sepDetail || 'Sin horas SEP adicionales.')}</p>
       </div>
 
       <div style="background:#f0fdf4; padding:0.75rem; border-radius:8px; border:1px solid #bbf7d0; font-size:0.84rem;">
-        <strong>III. Horas No Lectivas (Proporción 65/35) y Resumen:</strong>
+        <strong>III. Horas No Lectivas y Proporción Legal 65/35:</strong>
         <ul style="margin:0.35rem 0 0 1.2rem;">
-          <li>Total Horas Pedagógicas (I + II): <strong>${totalPedag} hrs pedagógicas</strong> (${totalLectivasChrono.toFixed(2)} hrs cronológicas)</li>
-          <li>Actividades No Lectivas: Planificación, preparación y evaluación (40%), Consejo de profesores (2h), DPD (1h), Evaluación docente (2h), Atención de apoderados y estudiantes (1.5h).</li>
+          <li>Total Horas Aula (I + II): <strong>${totalPedag} hrs pedagógicas</strong> = <strong>${totalLectivasChrono.toFixed(2)} hrs cronológicas (${pctLectivo}%)</strong></li>
+          <li>Total Horas No Lectivas Disponibles: <strong>${nonTeachingChrono.toFixed(2)} hrs cronológicas (${pctNoLectivo}%)</strong></li>
+          <li>Distribución No Lectiva: ${escapeHtml(
+            teacher.nonTeachingDetail ||
+              'Planificación, preparación y evaluación (40%), Consejo de profesores, DPD, Evaluación docente, Atención de apoderados y estudiantes.'
+          )}</li>
         </ul>
       </div>
     </div>
@@ -2942,10 +3104,48 @@ function initEventListeners() {
   // Botón Deshacer
   document.getElementById('btnUndo').addEventListener('click', performUndo);
 
-  // Selector de Año Escolar (2026 / 2027)
+  // Inspector rápido al hacer clic en el indicador global de Topones
+  const conflictBadge = document.getElementById('globalConflictBadge');
+  if (conflictBadge) {
+    conflictBadge.style.cursor = 'pointer';
+    conflictBadge.addEventListener('click', () => {
+      const conflicts = scanAllConflicts();
+      if (conflicts.length === 0) {
+        showToast('✅ Validado: No existe ningún topón de profesores en todo el colegio.', 'success');
+        return;
+      }
+      const first = conflicts[0];
+      const t = state.teachers.find((x) => x.id === first.first.teacherId);
+      const c1 = state.courses.find((x) => x.id === first.first.courseId);
+      const c2 = state.courses.find((x) => x.id === first.second.courseId);
+      const p = state.periods.find((x) => x.id === first.first.periodId);
+      const d = DAYS[first.first.dayIndex];
+      ui.panoramaActiveDay = String(first.first.dayIndex);
+      switchTab('tab-resumen');
+      renderAll();
+      showToast(
+        `⚠️ Topón detectado: ${t ? t.name : ''} el ${d ? d.name : ''} (${p ? p.label : ''}) entre ${
+          c1 ? c1.name : ''
+        } y ${c2 ? c2.name : ''}.`,
+        'error'
+      );
+    });
+  }
+
+  // Selector de Año Escolar (2026 / 2027) con protección de cambios sin guardar
   document.getElementById('selectSchoolYear').addEventListener('change', (e) => {
     const selectedYear = e.target.value;
+    if (hasUnsavedChanges) {
+      const proceed = confirm(
+        `Tienes cambios sin guardar en el año ${currentSchoolYear}. ¿Deseas cambiar al año ${selectedYear} sin guardar?`
+      );
+      if (!proceed) {
+        e.target.value = currentSchoolYear;
+        return;
+      }
+    }
     ui.selectedPaletteReqId = null;
+    ui.selectedTeacherViewReqId = null;
     loadState(selectedYear);
     renderAll();
     showToast(`📅 Cambiado al Año Escolar ${selectedYear}.`, 'info');
@@ -3016,11 +3216,22 @@ function initEventListeners() {
 
   document.getElementById('selectViewTeacher').addEventListener('change', (e) => {
     ui.activeViewTeacherId = e.target.value;
+    ui.selectedTeacherViewReqId = null;
     renderTeacherViewTab();
   });
 
+  const btnFichaFromView = document.getElementById('btnOpenTeacherFichaFromView');
+  if (btnFichaFromView) {
+    btnFichaFromView.addEventListener('click', () => {
+      if (ui.activeViewTeacherId) {
+        openTeacherDetailModal(ui.activeViewTeacherId);
+      }
+    });
+  }
+
   document.getElementById('btnToggleAvailabilityMode').addEventListener('click', () => {
     ui.availabilityEditMode = !ui.availabilityEditMode;
+    if (ui.availabilityEditMode) ui.selectedTeacherViewReqId = null;
     renderTeacherViewTab();
   });
 
@@ -3036,10 +3247,14 @@ function initEventListeners() {
     const name = document.getElementById('teacherNameInput').value.trim();
     const specialty = document.getElementById('teacherSpecialtyInput').value.trim();
     const maxHours = Number(document.getElementById('teacherMaxHoursInput').value) || 30;
+    const otherLectivasEl = document.getElementById('teacherOtherLectivasInput');
+    const otherLectivasHours = otherLectivasEl ? Number(otherLectivasEl.value) || 0 : 0;
     const sepHours = Number(document.getElementById('teacherSepHoursInput').value) || 0;
     const contractChrono = Number(document.getElementById('teacherContractChronoInput').value) || 38;
     const pieInfo = document.getElementById('teacherPieHoursInput').value.trim();
     const sepDetail = document.getElementById('teacherSepDetailInput').value.trim();
+    const nonTeachingEl = document.getElementById('teacherNonTeachingInput');
+    const nonTeachingDetail = nonTeachingEl ? nonTeachingEl.value.trim() : '';
     const color = document.getElementById('teacherColorInput').value || '#2563eb';
 
     if (!name || !initials) return;
@@ -3055,10 +3270,12 @@ function initEventListeners() {
           name,
           specialty,
           maxHours,
+          otherLectivasHours,
           sepHours,
           contractChrono,
           pieInfo,
           sepDetail,
+          nonTeachingDetail: nonTeachingDetail || state.teachers[idx].nonTeachingDetail || '',
           color
         };
         showToast('Profesor(a) actualizado(a).', 'success');
@@ -3070,11 +3287,14 @@ function initEventListeners() {
         name,
         specialty,
         maxHours,
-        otherLectivasHours: 0,
+        otherLectivasHours,
         sepHours,
         contractChrono,
         pieInfo,
         sepDetail,
+        nonTeachingDetail:
+          nonTeachingDetail ||
+          'Planificación 40% | Consejo Profesores | DPD Depto/ABP | DPD Evaluación Docente | Atención Apoderados',
         color
       });
       showToast('Profesor(a) agregado(a).', 'success');
@@ -3199,6 +3419,22 @@ function initEventListeners() {
   document.getElementById('btnCloseTeacherDetailFooter').addEventListener('click', () => {
     document.getElementById('teacherDetailModal').classList.add('hidden');
   });
+
+  const btnLoadBase = document.getElementById('btnLoadBaseSchedule');
+  if (btnLoadBase) {
+    btnLoadBase.addEventListener('click', () => {
+      const msg = `¿Cargar la propuesta de Horario Base Institucional completo (38/38 bloques sin topones) en el año ${currentSchoolYear}?`;
+      if (!confirm(msg)) return;
+      pushUndoSnapshot();
+      state = getInstitutionalBaseData(true);
+      saveState();
+      renderAll();
+      showToast(
+        `📋 Horario Base completo (38/38 bloques) cargado en pantalla. Presiona "💾 Guardar Cambios" para publicarlo en la nube.`,
+        'success'
+      );
+    });
+  }
 
   document.getElementById('btnResetYearData').addEventListener('click', () => {
     const msg = `¿Reiniciar el tablero del año ${currentSchoolYear} en blanco (0/38 bloques) conservando los cursos (1º a 8º), asignaturas y profesores?`;
@@ -3458,10 +3694,14 @@ function resetTeacherForm() {
   document.getElementById('teacherNameInput').value = '';
   document.getElementById('teacherSpecialtyInput').value = '';
   document.getElementById('teacherMaxHoursInput').value = '30';
+  const otherEl = document.getElementById('teacherOtherLectivasInput');
+  if (otherEl) otherEl.value = '0';
   document.getElementById('teacherSepHoursInput').value = '0';
   document.getElementById('teacherContractChronoInput').value = '38';
   document.getElementById('teacherPieHoursInput').value = '';
   document.getElementById('teacherSepDetailInput').value = '';
+  const nonTeachEl = document.getElementById('teacherNonTeachingInput');
+  if (nonTeachEl) nonTeachEl.value = '';
   document.getElementById('btnCancelTeacherEdit').classList.add('hidden');
 }
 
