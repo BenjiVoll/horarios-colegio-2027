@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Christian College — Sistema de Gestión de Horarios</title>
-  <link rel="icon" type="image/png" href="logo-colegio.png" />
+  <link rel="icon" type="image/png" href="assets/img/logo-colegio.png" />
   <script>
     // Detección instantánea de sesión guardada para evitar el parpadeo de la pantalla de login
     (function () {
@@ -20,14 +20,14 @@
       } catch (e) {}
     })();
   </script>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="assets/css/styles.css" />
 </head>
 <body class="auth-locked">
   <!-- ==================== PANTALLA DE INICIO DE SESIÓN Y PROTECCIÓN DE ACCESO ==================== -->
   <div id="authLoginOverlay" class="auth-overlay no-print">
     <div class="auth-card">
       <div class="auth-card-header">
-        <img src="logo-colegio.png" alt="Christian College Logo" class="auth-logo" />
+        <img src="assets/img/logo-colegio.png" alt="Christian College Logo" class="auth-logo" />
         <h2>Christian College</h2>
         <p class="auth-subtitle">Acceso Institucional — Dirección y Jefatura de UTP</p>
         <div class="auth-security-badge">
@@ -89,7 +89,7 @@
   <!-- Barra Superior -->
   <header class="topbar no-print">
     <div class="brand">
-      <img src="logo-colegio.png" alt="Christian College Logo" class="brand-logo" />
+      <img src="assets/img/logo-colegio.png" alt="Christian College Logo" class="brand-logo" />
       <div>
         <h1>Christian College</h1>
         <p class="subtitle">Sistema de Gestión de Horarios — Dirección y UTP (1º a 8º Básico)</p>
@@ -168,7 +168,7 @@
   <main class="main-container">
     <!-- Encabezado exclusivo para Impresión / PDF -->
     <div class="print-header">
-      <img src="logo-colegio.png" alt="Christian College Logo" class="print-header-logo" />
+      <img src="assets/img/logo-colegio.png" alt="Christian College Logo" class="print-header-logo" />
       <div>
         <h2>Christian College — Hualqui</h2>
         <p>Freire 689, Hualqui · Planificación Académica y Horarios Escolares</p>
@@ -835,6 +835,15 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <!-- Módulos de Arquitectura de la Aplicación -->
+  <script src="src/config/constants.js"></script>
+  <script src="src/config/seedData.js"></script>
+  <script src="src/utils/helpers.js"></script>
+  <script src="src/middlewares/auth.middleware.js"></script>
+  <script src="src/services/auth.service.js"></script>
+  <script src="src/services/storage.service.js"></script>
+  <script src="src/services/scheduler.service.js"></script>
+  <script src="src/controllers/ui.controller.js"></script>
+  <script src="src/controllers/events.controller.js"></script>
 </body>
 </html>
