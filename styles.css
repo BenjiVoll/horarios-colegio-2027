@@ -1659,6 +1659,23 @@ body.auth-locked .main-container {
   user-select: none;
 }
 
+/* Si el navegador detectó una sesión activa guardada al iniciar, evita el parpadeo de la pantalla de login */
+html.has-stored-session body.auth-locked {
+  overflow: auto;
+}
+
+html.has-stored-session body.auth-locked .topbar,
+html.has-stored-session body.auth-locked .main-nav,
+html.has-stored-session body.auth-locked .main-container {
+  filter: none !important;
+  pointer-events: auto !important;
+  user-select: auto !important;
+}
+
+html.has-stored-session #authLoginOverlay {
+  display: none !important;
+}
+
 .auth-overlay {
   position: fixed;
   inset: 0;

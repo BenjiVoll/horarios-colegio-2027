@@ -610,6 +610,7 @@ function saveAuthSession(sessionObj, remember = true) {
 }
 
 function clearAuthSession() {
+  document.documentElement.classList.remove('has-stored-session');
   authSession = null;
   if (tokenRefreshTimer) {
     clearInterval(tokenRefreshTimer);
@@ -705,6 +706,8 @@ async function signInWithEmailPassword(email, password, remember = true) {
   return sessionObj;
 }
 
+let refreshingTokenPromise = null;
+
 async function refreshIdToken() {
   if (!authSession || !authSession.refreshToken) {
     throw new Error('SESSION_MISSING');
@@ -714,30 +717,43 @@ async function refreshIdToken() {
     throw new Error('API_KEY_MISSING');
   }
 
-  const endpoint = `https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(authSession.refreshToken)}`
-  });
-
-  const data = await res.json();
-  if (!res.ok || !data.id_token) {
-    throw new Error('TOKEN_REFRESH_FAILED');
+  if (refreshingTokenPromise) {
+    return refreshingTokenPromise;
   }
 
-  const expiresInSec = Number(data.expires_in || 3600);
-  saveAuthSession(
-    {
-      ...authSession,
-      idToken: data.id_token,
-      refreshToken: data.refresh_token || authSession.refreshToken,
-      localId: data.user_id || authSession.localId,
-      expiresAt: Date.now() + expiresInSec * 1000
-    },
-    authSession.remember !== false
-  );
-  return authSession.idToken;
+  refreshingTokenPromise = (async () => {
+    try {
+      const endpoint = `https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(authSession.refreshToken)}`
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.id_token) {
+        const errCode = data && data.error && (data.error.message || data.error) ? (data.error.message || data.error) : 'TOKEN_REFRESH_FAILED';
+        throw new Error(errCode);
+      }
+
+      const expiresInSec = Number(data.expires_in || 3600);
+      saveAuthSession(
+        {
+          ...authSession,
+          idToken: data.id_token,
+          refreshToken: data.refresh_token || authSession.refreshToken,
+          localId: data.user_id || authSession.localId,
+          expiresAt: Date.now() + expiresInSec * 1000
+        },
+        authSession.remember !== false
+      );
+      return authSession.idToken;
+    } finally {
+      refreshingTokenPromise = null;
+    }
+  })();
+
+  return refreshingTokenPromise;
 }
 
 async function ensureValidIdToken() {
@@ -815,6 +831,7 @@ function resetInactivityWatchdog() {
 }
 
 function unlockApplicationUI() {
+  document.documentElement.classList.add('has-stored-session');
   document.body.classList.remove('auth-locked');
   const overlay = document.getElementById('authLoginOverlay');
   if (overlay) overlay.classList.add('hidden');
@@ -842,6 +859,7 @@ function unlockApplicationUI() {
 }
 
 function lockApplicationUI(reasonMessage = '') {
+  document.documentElement.classList.remove('has-stored-session');
   clearAuthSession();
   document.body.classList.add('auth-locked');
   const overlay = document.getElementById('authLoginOverlay');
@@ -3720,13 +3738,18 @@ async function bootstrapAuthAndApp() {
   const stored = loadStoredAuthSession();
   if (stored && stored.idToken && stored.refreshToken) {
     authSession = stored;
-    try {
-      await ensureValidIdToken();
-      unlockApplicationUI();
-      return;
-    } catch (err) {
+    // Desbloquear de inmediato la interfaz para evitar cualquier parpadeo de la pantalla de login
+    unlockApplicationUI();
+
+    // Validar o renovar el token en segundo plano sin interrumpir la experiencia de usuario
+    ensureValidIdToken().catch((err) => {
       console.warn('La sesión guardada expiró o fue revocada:', err);
-    }
+      const isNetworkError = err && (err.name === 'TypeError' || String(err.message).toLowerCase().includes('fetch'));
+      if (!isNetworkError) {
+        lockApplicationUI('🔒 Tu sesión ha expirado o fue revocada. Por favor, ingresa tus credenciales nuevamente.');
+      }
+    });
+    return;
   }
 
   lockApplicationUI();
