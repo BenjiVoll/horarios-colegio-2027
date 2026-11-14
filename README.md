@@ -26,6 +26,7 @@ sistema-horarios-colegio/
 │   │   └── auth.middleware.js        # Middleware de autenticación JWT, control de sesión e inactividad (60 min)
 │   ├── services/
 │   │   ├── auth.service.js           # Servicio de autenticación y renovación de tokens con Firebase Auth REST API
+│   │   ├── pdf.service.js            # Motor de generación y exportación vectorial de documentos PDF (jsPDF + AutoTable)
 │   │   ├── scheduler.service.js      # Motor de validación de topones, asignaciones, enroques y autocompletado
 │   │   └── storage.service.js        # Sincronización en tiempo real con Firebase, persistencia local y exportación CSV/JSON
 │   └── utils/

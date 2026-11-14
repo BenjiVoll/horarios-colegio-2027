@@ -1169,6 +1169,14 @@ function openTeacherDetailModal(teacherId) {
     renderAll();
   };
 
+  const btnExportFichaPdf = document.getElementById('btnExportTeacherFichaPdf');
+  if (btnExportFichaPdf) {
+    btnExportFichaPdf.onclick = () => {
+      modal.classList.add('hidden');
+      exportSingleTeacherPdfDirect(teacher.id);
+    };
+  }
+
   modal.classList.remove('hidden');
 }
 

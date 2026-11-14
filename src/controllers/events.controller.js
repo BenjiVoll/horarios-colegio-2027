@@ -589,7 +589,36 @@ function initEventListeners() {
       e.target.value = '';
     }
   });
-  document.getElementById('btnPrint').addEventListener('click', () => window.print());
+
+  // ==================== EVENTOS DEL CENTRO DE EXPORTACIÓN PDF OFICIAL ====================
+  const btnPrint = document.getElementById('btnPrint');
+  if (btnPrint) {
+    btnPrint.addEventListener('click', () => openPdfExportModal());
+  }
+
+  const pdfModal = document.getElementById('pdfExportModal');
+  const btnClosePdfModal = document.getElementById('btnClosePdfModal');
+  const btnCancelPdfModal = document.getElementById('btnCancelPdfModal');
+  const pdfDocTypeSelect = document.getElementById('pdfDocTypeSelect');
+  const btnExecutePdfDownload = document.getElementById('btnExecutePdfDownload');
+  const btnPreviewPdf = document.getElementById('btnPreviewPdf');
+
+  if (btnClosePdfModal) btnClosePdfModal.addEventListener('click', closePdfExportModal);
+  if (btnCancelPdfModal) btnCancelPdfModal.addEventListener('click', closePdfExportModal);
+  if (pdfModal) {
+    pdfModal.addEventListener('click', (e) => {
+      if (e.target === pdfModal) closePdfExportModal();
+    });
+  }
+  if (pdfDocTypeSelect) {
+    pdfDocTypeSelect.addEventListener('change', updatePdfModalSubOptions);
+  }
+  if (btnExecutePdfDownload) {
+    btnExecutePdfDownload.addEventListener('click', () => generateInstitutionalPdf('download'));
+  }
+  if (btnPreviewPdf) {
+    btnPreviewPdf.addEventListener('click', () => generateInstitutionalPdf('preview'));
+  }
 }
 
 async function bootstrapAuthAndApp() {

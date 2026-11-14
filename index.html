@@ -124,8 +124,8 @@
         📊 Exportar Planilla
       </button>
 
-      <button class="btn btn-primary btn-sm" id="btnPrint" title="Imprimir o guardar como PDF la vista actual">
-        🖨️ Imprimir / PDF
+      <button class="btn btn-primary btn-sm" id="btnPrint" title="Generar y exportar documento PDF oficial con tamaño y diseño institucional exacto">
+        📄 Exportar PDF Oficial
       </button>
 
       <!-- Indicador de Sesión Activa y Cierre de Sesión -->
@@ -737,9 +737,12 @@
         <button class="modal-close" id="btnCloseTeacherDetail" type="button">✕</button>
       </div>
       <div class="modal-body" id="teacherDetailBody"></div>
-      <div class="modal-footer">
-        <button class="btn btn-primary btn-sm" id="btnGoTeacherSchedule" type="button">🗓️ Ver Calendario del Profesor</button>
-        <button class="btn btn-outline btn-sm" id="btnCloseTeacherDetailFooter" type="button">Cerrar</button>
+      <div class="modal-footer" style="justify-content:space-between; flex-wrap:wrap; gap:0.4rem;">
+        <button class="btn btn-outline btn-sm" id="btnExportTeacherFichaPdf" type="button">📄 Descargar Ficha y Horario en PDF</button>
+        <div style="display:flex; gap:0.4rem;">
+          <button class="btn btn-primary btn-sm" id="btnGoTeacherSchedule" type="button">🗓️ Ver Calendario del Profesor</button>
+          <button class="btn btn-outline btn-sm" id="btnCloseTeacherDetailFooter" type="button">Cerrar</button>
+        </div>
       </div>
     </div>
   </div>
@@ -835,6 +838,112 @@
     </div>
   </div>
 
+  <!-- Modal Centro de Exportación PDF Oficial (Vectorial con jsPDF) -->
+  <div id="pdfExportModal" class="modal-backdrop hidden no-print">
+    <div class="modal-dialog" style="max-width:640px;">
+      <div class="modal-header">
+        <h3>📄 Centro de Exportación PDF Oficial — Christian College</h3>
+        <button class="modal-close" id="btnClosePdfModal" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="helper-text" style="margin-bottom:0.85rem;">
+          Genera un documento <strong>PDF vectorial nativo</strong> (sin depender del cuadro de impresión del navegador), ajustado exactamente al tamaño de hoja seleccionado con membrete institucional, colores y pie de firmas.
+        </p>
+
+        <div class="form-group" style="margin-bottom:0.9rem;">
+          <label for="pdfDocTypeSelect"><strong>1. ¿Qué documento deseas exportar a PDF?</strong></label>
+          <select id="pdfDocTypeSelect" class="form-control" style="margin-top:0.35rem; font-weight:600;">
+            <option value="course_single">🏫 Horario de un Curso específico (1 página exacta)</option>
+            <option value="course_all">📚 Todos los Cursos: 1º a 8º Básico (1 curso por página)</option>
+            <option value="teacher_single">👨‍🏫 Ficha y Horario Individual de un Profesor</option>
+            <option value="teacher_all">🗂️ Carpeta Docente Completa: Todos los Profesores (1 docente por página)</option>
+            <option value="panorama_day">🗓️ Panorama Diario: Todos los Cursos en paralelo</option>
+            <option value="panorama_week">📊 Sábana General Semanal (Matriz 38 bloques × 8 cursos)</option>
+            <option value="workload_65_35">📑 Cuadro Oficial de Carga Horaria Docente (Ley 65/35, SEP y PIE)</option>
+          </select>
+        </div>
+
+        <!-- Sub-selectores dinámicos según el tipo de reporte -->
+        <div id="pdfCourseSelectGroup" class="form-group" style="margin-bottom:0.9rem;">
+          <label for="pdfTargetCourseSelect"><strong>Curso a exportar:</strong></label>
+          <select id="pdfTargetCourseSelect" class="form-control" style="margin-top:0.3rem;"></select>
+        </div>
+
+        <div id="pdfTeacherSelectGroup" class="form-group hidden" style="margin-bottom:0.9rem;">
+          <label for="pdfTargetTeacherSelect"><strong>Docente a exportar:</strong></label>
+          <select id="pdfTargetTeacherSelect" class="form-control" style="margin-top:0.3rem;"></select>
+        </div>
+
+        <div id="pdfDaySelectGroup" class="form-group hidden" style="margin-bottom:0.9rem;">
+          <label for="pdfTargetDaySelect"><strong>Día de la semana a exportar:</strong></label>
+          <select id="pdfTargetDaySelect" class="form-control" style="margin-top:0.3rem;">
+            <option value="0">Lunes</option>
+            <option value="1">Martes</option>
+            <option value="2">Miércoles</option>
+            <option value="3">Jueves</option>
+            <option value="4">Viernes</option>
+            <option value="ALL_DAYS">📅 Todos los días (Lunes a Viernes — 1 día por página)</option>
+          </select>
+        </div>
+
+        <div class="form-row" style="margin-bottom:0.9rem;">
+          <div class="form-group">
+            <label for="pdfPaperSizeSelect"><strong>2. Tamaño de Papel Exacto:</strong></label>
+            <select id="pdfPaperSizeSelect" class="form-control" style="margin-top:0.3rem;">
+              <option value="a4">A4 Estándar (297 × 210 mm)</option>
+              <option value="letter">Carta / Letter (279 × 216 mm)</option>
+              <option value="legal">Oficio / Legal (356 × 216 mm — Ideal Sábana)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="pdfOrientationSelect"><strong>3. Orientación de Página:</strong></label>
+            <select id="pdfOrientationSelect" class="form-control" style="margin-top:0.3rem;">
+              <option value="landscape">Horizontal / Apaisado (Recomendado)</option>
+              <option value="portrait">Vertical / Retrato</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:0.75rem 0.9rem; margin-bottom:0.75rem;">
+          <div style="font-weight:700; font-size:0.82rem; color:#1e293b; margin-bottom:0.45rem;">4. Opciones de Presentación Institucional:</div>
+          <div style="display:flex; flex-direction:column; gap:0.4rem; font-size:0.83rem; color:#334155;">
+            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+              <input type="checkbox" id="pdfIncludeColors" checked />
+              <span>Incluir colores distintivos por asignatura y docente</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+              <input type="checkbox" id="pdfIncludeSummary" checked />
+              <span>Incluir cuadro resumen de asignaturas y horas al pie del horario</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+              <input type="checkbox" id="pdfIncludeSignatures" checked />
+              <span>Incluir líneas de firma oficial (Dirección y Jefatura de UTP)</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="pdfRecommendationHint" style="background:#eff6ff; border-left:4px solid #2563eb; padding:0.55rem 0.75rem; font-size:0.79rem; color:#1e3a8a; border-radius:4px;">
+          📐 Formato optimizado: 1 página exacta con horario completo, recreos, resumen de asignaturas y firmas.
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+        <button class="btn btn-outline btn-sm" id="btnCancelPdfModal" type="button">Cancelar</button>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" id="btnPreviewPdf" type="button" title="Ver el PDF en una pestaña nueva antes de guardarlo">
+            👁️ Vista Previa en Pestaña
+          </button>
+          <button class="btn btn-primary btn-sm" id="btnExecutePdfDownload" type="button">
+            📥 Descargar PDF Oficial
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Librerías Vectoriales para Generación Nativa de PDF (jsPDF + AutoTable) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
   <!-- Módulos de Arquitectura de la Aplicación -->
   <script src="src/config/constants.js"></script>
   <script src="src/config/seedData.js"></script>
@@ -843,6 +952,7 @@
   <script src="src/services/auth.service.js"></script>
   <script src="src/services/storage.service.js"></script>
   <script src="src/services/scheduler.service.js"></script>
+  <script src="src/services/pdf.service.js"></script>
   <script src="src/controllers/ui.controller.js"></script>
   <script src="src/controllers/events.controller.js"></script>
 </body>
