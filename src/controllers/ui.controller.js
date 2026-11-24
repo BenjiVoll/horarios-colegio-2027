@@ -1029,38 +1029,44 @@ function renderTeachersManagementTab() {
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>
+      <td data-label="Sigla" class="mobile-card-sigla">
         <span class="teacher-initials-badge" style="background:${t.color}">${escapeHtml(t.initials || '')}</span>
       </td>
-      <td><strong>${escapeHtml(t.name)}</strong></td>
-      <td>${escapeHtml(t.specialty)}</td>
-      <td><strong>${plannedCourses}</strong> hrs</td>
-      <td>
+      <td data-label="Profesor(a)" class="mobile-card-title"><strong>${escapeHtml(t.name)}</strong></td>
+      <td data-label="Especialidad">${escapeHtml(t.specialty)}</td>
+      <td data-label="Hrs Plan (1º-8º)"><strong>${plannedCourses}</strong> hrs</td>
+      <td data-label="En Horario (1º-8º)">
         <span class="badge-pill ${isComplete ? 'badge-ok' : 'badge-warn'}">
           ${scheduledCourses} / ${plannedCourses} hrs
         </span>
       </td>
-      <td>
+      <td data-label="Kº/CRA y SEP">
         ${otherLectivas > 0 ? `<div>+${otherLectivas}h (Kº/CRA)</div>` : ''}
         ${sepHours > 0 ? `<div><strong>+${sepHours}h SEP</strong></div>` : ''}
         ${otherLectivas === 0 && sepHours === 0 ? '<span style="color:#94a3b8;">0 hrs</span>' : ''}
       </td>
-      <td>
-        <strong>${totalAulaPedag} hrs pedag.</strong>
-        <div style="font-size:0.73rem; color:#64748b;">(${totalAulaChrono.toFixed(2)} hrs cron.)</div>
+      <td data-label="Total Aula">
+        <div>
+          <strong>${totalAulaPedag} hrs pedag.</strong>
+          <div style="font-size:0.73rem; color:#64748b;">(${totalAulaChrono.toFixed(2)} hrs cron.)</div>
+        </div>
       </td>
-      <td>
-        <div><strong>${nonTeachingChrono.toFixed(2)} hrs cron.</strong> no lectivas</div>
-        <span class="badge-pill ${exceeds65 ? 'badge-danger' : 'badge-ok'}" style="margin-top:2px; font-size:0.7rem;" title="Proporción horas lectivas / no lectivas respecto al contrato">
-          ${pctLectivo}% Aula / ${pctNoLectivo}% No Lect.
-        </span>
+      <td data-label="No Lectivas (65/35)">
+        <div>
+          <div><strong>${nonTeachingChrono.toFixed(2)} hrs cron.</strong> no lectivas</div>
+          <span class="badge-pill ${exceeds65 ? 'badge-danger' : 'badge-ok'}" style="margin-top:2px; font-size:0.7rem;" title="Proporción horas lectivas / no lectivas respecto al contrato">
+            ${pctLectivo}% Aula / ${pctNoLectivo}% No Lect.
+          </span>
+        </div>
       </td>
-      <td>
-        <strong>${contractChrono} hrs</strong>
-        ${t.pieInfo ? `<span class="badge-pill" style="margin-left:4px;">${escapeHtml(t.pieInfo)}</span>` : ''}
+      <td data-label="Contrato">
+        <div>
+          <strong>${contractChrono} hrs</strong>
+          ${t.pieInfo ? `<span class="badge-pill" style="margin-left:4px;">${escapeHtml(t.pieInfo)}</span>` : ''}
+        </div>
       </td>
-      <td class="no-print">
-        <div style="display:flex; gap:0.3rem; flex-wrap:wrap;">
+      <td data-label="Acciones" class="no-print mobile-card-actions">
+        <div style="display:flex; gap:0.35rem; flex-wrap:wrap; justify-content:flex-end;">
           <button type="button" class="btn btn-outline btn-xs btn-ficha-t" title="Ver Ficha de Horas Lectivas y No Lectivas">📋 Ficha</button>
           <button type="button" class="btn btn-outline btn-xs btn-view-t" title="Ver Horario">🗓️</button>
           <button type="button" class="btn btn-outline btn-xs btn-edit-t" title="Editar">✏️</button>
@@ -1318,9 +1324,9 @@ function renderCoursesManagementTab() {
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><strong>${escapeHtml(r.shortCode || '')}</strong></td>
-      <td><strong>${escapeHtml(r.subject)}</strong></td>
-      <td>
+      <td data-label="Sigla" class="mobile-card-sigla"><strong>${escapeHtml(r.shortCode || '')}</strong></td>
+      <td data-label="Asignatura" class="mobile-card-title"><strong>${escapeHtml(r.subject)}</strong></td>
+      <td data-label="Profesor">
         <div class="teacher-Row-Name">
           <span class="teacher-initials-badge" style="background:${teacher ? teacher.color : '#64748b'}">${
       teacher ? escapeHtml(teacher.initials) : '?'
@@ -1328,16 +1334,16 @@ function renderCoursesManagementTab() {
           <span>${teacher ? escapeHtml(teacher.name) : 'Sin profesor'}</span>
         </div>
       </td>
-      <td><strong>${r.hoursPerWeek}</strong> hrs</td>
-      <td>${assigned} hrs</td>
-      <td>
+      <td data-label="Hrs Plan"><strong>${r.hoursPerWeek}</strong> hrs</td>
+      <td data-label="En Calendario">${assigned} hrs</td>
+      <td data-label="Estado">
         <span class="badge-pill ${complete ? 'badge-ok' : 'badge-warn'}">
           ${complete ? '✅ 100% en horario' : `Faltan ${Math.max(0, r.hoursPerWeek - assigned)} hrs`}
         </span>
       </td>
-      <td class="no-print">
-        <div style="display:flex; gap:0.35rem;">
-          <button type="button" class="btn btn-outline btn-xs btn-edit-req">✏️</button>
+      <td data-label="Acciones" class="no-print mobile-card-actions">
+        <div style="display:flex; gap:0.35rem; justify-content:flex-end;">
+          <button type="button" class="btn btn-outline btn-xs btn-edit-req">✏️ Editar</button>
           <button type="button" class="btn btn-danger-outline btn-xs btn-del-req">🗑️</button>
         </div>
       </td>
@@ -1351,6 +1357,7 @@ function renderCoursesManagementTab() {
       document.getElementById('reqHoursInput').value = r.hoursPerWeek;
       document.getElementById('btnSaveRequirement').textContent = 'Actualizar';
       document.getElementById('btnCancelReqEdit').classList.remove('hidden');
+      document.getElementById('requirementForm').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
 
     tr.querySelector('.btn-del-req').addEventListener('click', () => {
