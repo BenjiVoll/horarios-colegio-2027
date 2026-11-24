@@ -62,6 +62,7 @@ async function pushStateToCloud(year = currentSchoolYear) {
       throw new Error(`HTTP ${res.status}`);
     }
 
+    lastSyncedUpdatedAt = Number(payload.updatedAt || Date.now());
     updateCloudStatusUI('connected', '🔒 Nube Sincronizada');
     return true;
   } catch (err) {
@@ -101,6 +102,37 @@ async function commitSaveToDatabase() {
   updateGlobalCounters();
 
   if (getActiveFirebaseUrl()) {
+    // Protección contra sobrescritura: verificar si otro usuario guardó cambios más recientes en la nube
+    try {
+      const endpoint = getCloudEndpoint(currentSchoolYear);
+      const checkRes = await authenticatedDatabaseFetch(endpoint, { cache: 'no-store' }, `t=${Date.now()}`);
+      if (checkRes.ok) {
+        const remote = await checkRes.json();
+        const remoteUpdatedAt = Number(remote?.updatedAt || 0);
+        if (
+          remote &&
+          remoteUpdatedAt > lastSyncedUpdatedAt &&
+          remote.clientId &&
+          remote.clientId !== CLIENT_SESSION_ID
+        ) {
+          const who = remote.updatedBy || 'otro usuario';
+          const when = new Date(remoteUpdatedAt).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+          const proceed = confirm(
+            `⚠️ Atención: ${who} guardó cambios más recientes en la nube (${when}) mientras editabas.\n\n` +
+              `¿Deseas SOBRESCRIBIR la nube con tus cambios actuales?\n` +
+              `• Aceptar: guarda tu versión en la nube.\n` +
+              `• Cancelar: mantiene tus cambios locales para que revises o descargues la nube primero.`
+          );
+          if (!proceed) {
+            showToast('Guardado en la nube cancelado para evitar sobrescritura.', 'warn');
+            return;
+          }
+        }
+      }
+    } catch (checkErr) {
+      console.warn('No se pudo verificar versión remota antes de guardar:', checkErr);
+    }
+
     const ok = await pushStateToCloud(currentSchoolYear);
     if (ok) {
       hasUnsavedChanges = false;
@@ -163,6 +195,7 @@ async function pullStateFromCloud(year = currentSchoolYear, options = { force: f
         updatedAt: cloudUpdatedAt || Date.now(),
         clientId: cloudData.clientId || ''
       };
+      lastSyncedUpdatedAt = Number(state.updatedAt || 0);
       hasUnsavedChanges = false;
       updateSaveButtonUI();
       try {
@@ -195,6 +228,7 @@ function startCloudSyncLoop() {
 }
 
 function loadState(year = null) {
+  loadAvailableSchoolYears();
   try {
     if (year) {
       currentSchoolYear = String(year);
@@ -203,15 +237,14 @@ function loadState(year = null) {
       currentSchoolYear = localStorage.getItem(ACTIVE_YEAR_KEY) || '2026';
     }
 
+    ensureYearInList(currentSchoolYear);
+    renderSchoolYearSelector();
+
     undoStack = [];
     hasUnsavedChanges = false;
+    lastSyncedUpdatedAt = 0;
     updateUndoButton();
     updateSaveButtonUI();
-
-    const selectYearEl = document.getElementById('selectSchoolYear');
-    if (selectYearEl) {
-      selectYearEl.value = currentSchoolYear;
-    }
 
     const raw = localStorage.getItem(getStorageKeyForYear(currentSchoolYear));
     if (raw) {

@@ -4,7 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Christian College — Sistema de Gestión de Horarios</title>
+  <meta name="theme-color" content="#215387" />
+  <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/png" href="assets/img/logo-colegio.png" />
+  <link rel="apple-touch-icon" href="assets/img/logo-colegio.png" />
   <script>
     // Detección instantánea de sesión guardada para evitar el parpadeo de la pantalla de login
     (function () {
@@ -117,6 +120,7 @@
             <option value="2026">2026</option>
             <option value="2027">2027</option>
           </select>
+          <button type="button" class="btn-add-year" id="btnAddSchoolYear" title="Crear o clonar un nuevo Año Escolar">+</button>
         </div>
 
         <div class="conflict-badge" id="globalConflictBadge" title="Estado de validación de topones en todo el colegio">
@@ -231,6 +235,13 @@
               <div id="courseSubjectsPalette" class="palette-list"></div>
 
               <div class="eraser-box">
+                <button id="btnSelectSwapMode" class="palette-item swap-item" type="button">
+                  <span class="eraser-icon">🔄</span>
+                  <div>
+                    <strong>Mover / Intercambiar</strong>
+                    <small>Toca 2 bloques para mover o hacer enroque (ideal táctil)</small>
+                  </div>
+                </button>
                 <button id="btnSelectEraser" class="palette-item eraser-item" type="button">
                   <span class="eraser-icon">🧹</span>
                   <div>
@@ -293,6 +304,9 @@
               <span id="mobileActiveSelectionText"></span>
               <button type="button" class="btn btn-xs btn-outline" id="btnClearActiveSelection">✕ Soltar</button>
             </div>
+
+            <!-- Aviso pedagógico no bloqueante (3+ bloques seguidos de la misma asignatura) -->
+            <div id="coursePedagogicalAlert" class="pedagogical-alert-banner hidden no-print"></div>
 
             <!-- Selector rápido de día para móvil (<= 768px) -->
             <div class="mobile-day-bar no-print" id="courseMobileDayBar" role="tablist" aria-label="Seleccionar día">
@@ -408,6 +422,9 @@
 
     <!-- ==================== TAB 4: HORAS LECTIVAS, SEP Y NO LECTIVAS ==================== -->
     <section id="tab-profesores" class="tab-panel">
+      <!-- Dashboard Resumen de Cumplimiento 65/35 y Carga Horaria -->
+      <div id="workloadSummaryKpis" class="workload-kpis no-print"></div>
+
       <div class="management-grid">
         <!-- Formulario Crear/Editar Profesor -->
         <div class="card no-print mobile-collapsible-card is-collapsed-mobile" id="teacherFormCard">
@@ -629,8 +646,15 @@
 
         <div class="card">
           <div class="card-header-flex">
-            <h2>Estructura Oficial de Bloques de la Jornada Escolar (38 Bloques Semanales)</h2>
-            <span class="badge-pill" id="totalWeeklySlotsBadge">38 bloques semanales</span>
+            <div>
+              <h2>Estructura Oficial de Bloques de la Jornada Escolar (38 Bloques Semanales)</h2>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+              <span class="badge-pill" id="totalWeeklySlotsBadge">38 bloques semanales</span>
+              <button type="button" class="btn btn-outline btn-xs no-print" id="btnBackFromBlocksTab">
+                ← Volver a Ayuda UTP
+              </button>
+            </div>
           </div>
           <div class="table-responsive">
             <table class="data-table">
@@ -739,7 +763,8 @@
                 <li><strong>Cambiar el profesor de una asignatura:</strong> Ve a <strong>📚 Plan de Estudio por Curso</strong>, elige el curso a la izquierda, presiona el botón <code>✏️</code> junto a la asignatura, selecciona al nuevo profesor y presiona <strong>Actualizar</strong>. El cambio se actualizará automáticamente en todo el horario.</li>
                 <li><strong>Revisar horas de contrato y proporción 65/35:</strong> En <strong>📑 Carga Docente (65/35 y SEP)</strong> puedes agregar profesores nuevos, editar sus horas SEP/PIE o abrir su <strong>📋 Ficha</strong> detallada.</li>
                 <li><strong>Confirmar cambios en la Nube (💾 Guardar Cambios):</strong> Cuando asignes o modifiques bloques, presiona el botón superior <strong>💾 Guardar Cambios</strong> (o <code>Ctrl + S</code>) para publicar los cambios en todos los dispositivos.</li>
-                <li><strong>Imprimir o Guardar en PDF (🖨️):</strong> Entra al horario del curso, del profesor o al Panorama General y presiona <strong>🖨️ Imprimir / PDF</strong> arriba a la derecha.</li>
+                <li><strong>Exportar PDF Oficial (📄):</strong> Presiona <strong>📄 Exportar PDF Oficial</strong> arriba a la derecha para descargar en formato vectorial exacto (A4, Carta u Oficio) cursos, profesores, sábana general o cuadro 65/35.</li>
+                <li><strong>Crear o clonar un nuevo Año Escolar (<code>+</code>):</strong> Junto al selector de año superior puedes presionar <strong><code>+</code></strong> para abrir un nuevo año escolar (ej. 2028) clonando automáticamente docentes, cursos y planes de estudio.</li>
               </ul>
             </div>
           </div>
@@ -751,7 +776,7 @@
               Estas opciones están resguardadas aquí para mantener limpia la barra principal de trabajo diario y evitar reinicios accidentales.
             </p>
             <div style="display:flex; flex-wrap:wrap; gap:0.65rem; align-items:center;">
-              <button class="btn btn-outline btn-sm" id="btnOpenBlocksTab" type="button" onclick="document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active')); document.getElementById('tab-bloques').classList.add('active');">
+              <button class="btn btn-outline btn-sm" id="btnOpenBlocksTab" type="button">
                 ⏰ Ver / Editar Bloques y Recreos de la Jornada
               </button>
               <button class="btn btn-outline btn-sm" id="btnExportJSON" type="button" title="Descargar copia de seguridad completa en formato .json">
@@ -870,14 +895,13 @@
   "rules": {
     ".read": false,
     ".write": false,
-    "sistema_horarios_2026": {
+    "sistema_horarios_years": {
       ".read": "auth != null",
-      ".write": "auth != null",
-      ".validate": "newData.hasChildren(['teachers', 'courses', 'periods', 'requirements', 'updatedAt'])"
+      ".write": "auth != null"
     },
-    "sistema_horarios_2027": {
-      ".read": "auth != null",
-      ".write": "auth != null",
+    "$yearKey": {
+      ".read": "auth != null && $yearKey.matches(/^sistema_horarios_[0-9]{4}$/)",
+      ".write": "auth != null && $yearKey.matches(/^sistema_horarios_[0-9]{4}$/)",
       ".validate": "newData.hasChildren(['teachers', 'courses', 'periods', 'requirements', 'updatedAt'])"
     }
   }
@@ -1007,6 +1031,39 @@
           </button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal Crear / Clonar Nuevo Año Escolar -->
+  <div id="newSchoolYearModal" class="modal-backdrop hidden no-print">
+    <div class="modal-dialog" style="max-width:480px;">
+      <div class="modal-header">
+        <h3>📅 Crear o Clonar Año Escolar</h3>
+        <button class="modal-close" id="btnCloseNewYearModal" type="button">✕</button>
+      </div>
+      <form id="newSchoolYearForm">
+        <div class="modal-body form-stack">
+          <p class="helper-text" style="padding:0;">
+            Crea un año escolar independiente en el sistema y elige si deseas copiar la planta docente y planes de estudio desde el año actual (<strong id="newYearSourceLabel">2026</strong>).
+          </p>
+          <div class="form-group">
+            <label for="inputNewSchoolYear">Nuevo Año Escolar (4 dígitos) *</label>
+            <input type="number" id="inputNewSchoolYear" class="form-control" min="2024" max="2099" placeholder="Ej: 2028" required />
+          </div>
+          <div class="form-group">
+            <label for="selectNewYearMode">Base Inicial para este Año</label>
+            <select id="selectNewYearMode" class="form-control">
+              <option value="clone_structure">📋 Clonar docentes, cursos, bloques y planes del año actual (horario en blanco 0/38)</option>
+              <option value="clone_all">📄 Clonar todo del año actual (incluyendo bloques de horario ya asignados)</option>
+              <option value="blank_base">🧹 Iniciar desde plantilla base institucional en blanco (0/38)</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline btn-sm" id="btnCancelNewYearModal" type="button">Cancelar</button>
+          <button class="btn btn-primary btn-sm" type="submit">📅 Crear Año Escolar</button>
+        </div>
+      </form>
     </div>
   </div>
 

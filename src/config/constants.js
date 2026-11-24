@@ -12,6 +12,7 @@ const AUTH_SESSION_STORAGE_KEY = 'eduhorario_auth_session_v1';
 const SESSION_INACTIVITY_LIMIT_MS = 60 * 60 * 1000; // 60 minutos de inactividad máxima
 
 const ACTIVE_YEAR_KEY = 'eduhorario_active_school_year_v4';
+const AVAILABLE_YEARS_KEY = 'eduhorario_available_years_v1';
 const STORAGE_PREFIX = 'eduhorario_school_data_v4_';
 const CLIENT_SESSION_ID = 'client_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 
@@ -28,6 +29,8 @@ const DAYS = [
 ];
 
 let currentSchoolYear = '2026';
+let availableSchoolYears = ['2026', '2027'];
+let lastSyncedUpdatedAt = 0;
 let undoStack = [];
 let cloudSyncTimer = null;
 let isPushingToCloud = false;
@@ -54,6 +57,7 @@ let ui = {
   selectedTeacherViewReqId: null,
   availabilityEditMode: false,
   modalTargetSlot: null,
+  swapSourceSlot: null,
   panoramaActiveDay: '0', // '0'..'4' o 'WEEK'
   panoramaHighlightTeacherId: '',
   courseMobileDay: '0', // '0'..'4' o 'ALL' (solo afecta vista móvil <= 768px)
@@ -78,5 +82,52 @@ function getCloudEndpoint(year) {
   const baseUrl = getActiveFirebaseUrl();
   if (!baseUrl) return '';
   return `${baseUrl}/sistema_horarios_${year}.json`;
+}
+
+function loadAvailableSchoolYears() {
+  try {
+    const raw = localStorage.getItem(AVAILABLE_YEARS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const cleaned = [...new Set(parsed.map((y) => String(y).trim()).filter((y) => /^[0-9]{4}$/.test(y)))].sort();
+        if (cleaned.length > 0) {
+          availableSchoolYears = cleaned;
+          return availableSchoolYears;
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error al cargar lista de años escolares:', e);
+  }
+  availableSchoolYears = ['2026', '2027'];
+  return availableSchoolYears;
+}
+
+function saveAvailableSchoolYears() {
+  availableSchoolYears = [...new Set(availableSchoolYears.map(String).filter((y) => /^[0-9]{4}$/.test(y)))].sort();
+  try {
+    localStorage.setItem(AVAILABLE_YEARS_KEY, JSON.stringify(availableSchoolYears));
+  } catch (e) {
+    console.error('Error al guardar lista de años escolares:', e);
+  }
+}
+
+function ensureYearInList(year) {
+  const y = String(year).trim();
+  if (!/^[0-9]{4}$/.test(y)) return;
+  if (!availableSchoolYears.includes(y)) {
+    availableSchoolYears.push(y);
+    saveAvailableSchoolYears();
+  }
+}
+
+function renderSchoolYearSelector() {
+  const selectYearEl = document.getElementById('selectSchoolYear');
+  if (!selectYearEl) return;
+  ensureYearInList(currentSchoolYear);
+  selectYearEl.innerHTML = availableSchoolYears
+    .map((y) => `<option value="${y}" ${y === String(currentSchoolYear) ? 'selected' : ''}>${y}</option>`)
+    .join('');
 }
 

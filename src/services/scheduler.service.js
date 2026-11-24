@@ -87,6 +87,88 @@ function scanAllConflicts() {
 }
 
 /**
+ * Calcula las "ventanas" (bloques libres intermedios entre la primera y última clase de un día) para un docente.
+ */
+function calculateTeacherGaps(teacherId) {
+  const classPeriods = state.periods.filter((p) => p.type !== 'break');
+  const gapSlotKeys = new Set();
+  const gapsByDay = {};
+  let totalGaps = 0;
+
+  DAYS.forEach((day) => {
+    const activePeriods = classPeriods.filter((p) => !isPeriodDisabledOnDay(p, day.index));
+    const busyIndices = [];
+    activePeriods.forEach((p, idx) => {
+      const slots = findTeacherAssignmentsAtSlot(teacherId, day.index, p.id);
+      if (slots.length > 0) busyIndices.push(idx);
+    });
+
+    let dayGaps = 0;
+    if (busyIndices.length >= 2) {
+      const firstIdx = busyIndices[0];
+      const lastIdx = busyIndices[busyIndices.length - 1];
+      for (let i = firstIdx + 1; i < lastIdx; i++) {
+        if (!busyIndices.includes(i)) {
+          dayGaps++;
+          totalGaps++;
+          gapSlotKeys.add(`${day.index}__${activePeriods[i].id}`);
+        }
+      }
+    }
+    gapsByDay[day.index] = dayGaps;
+  });
+
+  return { totalGaps, gapsByDay, gapSlotKeys };
+}
+
+/**
+ * Detecta alertas pedagógicas no bloqueantes en un curso (ej. 3 o más bloques seguidos de la misma asignatura en un día).
+ */
+function findCourseConsecutiveWarnings(courseId) {
+  const classPeriods = state.periods.filter((p) => p.type !== 'break');
+  const warnings = [];
+
+  DAYS.forEach((day) => {
+    const activePeriods = classPeriods.filter((p) => !isPeriodDisabledOnDay(p, day.index));
+    let streakReqId = null;
+    let streakSubject = '';
+    let streakCount = 0;
+
+    const flushStreak = () => {
+      if (streakCount >= 3 && streakReqId) {
+        warnings.push({
+          dayIndex: day.index,
+          dayName: day.name,
+          subject: streakSubject,
+          count: streakCount
+        });
+      }
+    };
+
+    activePeriods.forEach((p) => {
+      const a = state.assignments[slotKey(courseId, day.index, p.id)];
+      if (a && a.reqId === streakReqId) {
+        streakCount++;
+      } else {
+        flushStreak();
+        if (a) {
+          streakReqId = a.reqId;
+          streakSubject = a.subject;
+          streakCount = 1;
+        } else {
+          streakReqId = null;
+          streakSubject = '';
+          streakCount = 0;
+        }
+      }
+    });
+    flushStreak();
+  });
+
+  return warnings;
+}
+
+/**
  * Intercambia (hace enroque) o mueve un bloque ya asignado hacia otro bloque del mismo curso.
  */
 function swapOrMoveSlotsInCourse(courseId, fromDay, fromPeriodId, toDay, toPeriodId) {

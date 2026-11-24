@@ -111,6 +111,110 @@ body {
   cursor: pointer;
 }
 
+.btn-add-year {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 5px;
+  width: 24px;
+  height: 24px;
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-add-year:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Aviso pedagógico no bloqueante en calendario de curso */
+.pedagogical-alert-banner {
+  background: #fffbeb;
+  border-bottom: 1px solid #fde68a;
+  color: #92400e;
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  line-height: 1.35;
+}
+
+/* Indicador visual de ventanas docentes */
+.stat-pill-warn {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.stat-pill-ok {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.slot-cell.slot-teacher-gap {
+  background-color: #fffbeb;
+}
+
+.slot-cell.slot-teacher-gap .empty-slot-placeholder {
+  color: #b45309;
+  font-weight: 600;
+}
+
+/* Dashboard Resumen 65/35 en Carga Docente */
+.workload-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.workload-kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  box-shadow: var(--shadow);
+}
+
+.workload-kpi-card.kpi-ok {
+  border-left-color: var(--success);
+}
+
+.workload-kpi-card.kpi-warn {
+  border-left-color: var(--warning);
+}
+
+.workload-kpi-card.kpi-danger {
+  border-left-color: var(--danger);
+}
+
+.workload-kpi-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.workload-kpi-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0.15rem 0;
+  line-height: 1.15;
+}
+
+.workload-kpi-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .conflict-badge {
   display: inline-flex;
   align-items: center;
@@ -591,6 +695,36 @@ body {
 .eraser-box {
   padding: 0.45rem 0.85rem 0.8rem;
   border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.swap-item {
+  justify-content: flex-start;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.swap-item.selected {
+  background: #dbeafe;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.16);
+}
+
+.swap-item small {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.slot-cell.slot-swap-source {
+  background-color: #dbeafe;
+  box-shadow: inset 0 0 0 3px var(--primary);
+}
+
+.slot-cell.slot-swap-source .assigned-block {
+  box-shadow: 0 0 0 2px #1d4ed8;
 }
 
 .eraser-item {
@@ -2334,9 +2468,18 @@ body {
   }
 
   /* Panorama General en móvil */
-  .overview-kpis {
-    grid-template-columns: repeat(2, 1fr);
+  .overview-kpis,
+  .workload-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.45rem;
+  }
+
+  .workload-kpi-card {
+    padding: 0.65rem 0.75rem;
+  }
+
+  .workload-kpi-value {
+    font-size: 1.15rem;
   }
 
   .kpi-course-card {

@@ -22,9 +22,13 @@ function ensureValidSelections() {
   if (
     ui.selectedPaletteReqId &&
     ui.selectedPaletteReqId !== 'ERASER' &&
+    ui.selectedPaletteReqId !== 'SWAP' &&
     !state.requirements.some((r) => r.id === ui.selectedPaletteReqId && r.courseId === ui.activeCourseId)
   ) {
     ui.selectedPaletteReqId = null;
+  }
+  if (ui.swapSourceSlot && ui.swapSourceSlot.courseId !== ui.activeCourseId) {
+    ui.swapSourceSlot = null;
   }
 }
 
@@ -58,6 +62,7 @@ function renderSchedulerTab() {
     pill.addEventListener('click', () => {
       ui.activeCourseId = c.id;
       ui.selectedPaletteReqId = null;
+      ui.swapSourceSlot = null;
       renderSchedulerTab();
     });
     quickPills.appendChild(pill);
@@ -113,6 +118,7 @@ function renderSchedulerTab() {
 
     btn.addEventListener('click', () => {
       ui.selectedPaletteReqId = ui.selectedPaletteReqId === req.id ? null : req.id;
+      ui.swapSourceSlot = null;
       renderSchedulerTab();
     });
 
@@ -126,6 +132,10 @@ function renderSchedulerTab() {
   });
 
   document.getElementById('btnSelectEraser').classList.toggle('selected', ui.selectedPaletteReqId === 'ERASER');
+  const btnSwapMode = document.getElementById('btnSelectSwapMode');
+  if (btnSwapMode) {
+    btnSwapMode.classList.toggle('selected', ui.selectedPaletteReqId === 'SWAP');
+  }
 
   const hintEl = document.getElementById('calendarActiveSelectionHint');
   const mobileBar = document.getElementById('mobileActiveSelectionBar');
@@ -136,6 +146,23 @@ function renderSchedulerTab() {
     if (mobileBar && mobileBarText) {
       mobileBarText.textContent = '🧹 Modo Borrador activo — toca un bloque para vaciarlo';
       mobileBar.classList.remove('hidden');
+    }
+  } else if (ui.selectedPaletteReqId === 'SWAP') {
+    if (ui.swapSourceSlot) {
+      const srcAssign = state.assignments[slotKey(ui.swapSourceSlot.courseId, ui.swapSourceSlot.dayIndex, ui.swapSourceSlot.periodId)];
+      const srcDayName = DAYS[ui.swapSourceSlot.dayIndex]?.name || '';
+      const srcLabel = srcAssign ? `${srcAssign.shortCode || srcAssign.subject} (${srcDayName})` : 'Bloque seleccionado';
+      hintEl.textContent = `🔄 Moviendo ${srcLabel}: ahora toca el bloque de destino (libre para mover, u ocupado para intercambiar).`;
+      if (mobileBar && mobileBarText) {
+        mobileBarText.textContent = `🔄 Moviendo ${srcLabel} → toca destino`;
+        mobileBar.classList.remove('hidden');
+      }
+    } else {
+      hintEl.textContent = '🔄 Modo Mover / Intercambiar activo: toca primero el bloque asignado que deseas mover o cambiar de hora.';
+      if (mobileBar && mobileBarText) {
+        mobileBarText.textContent = '🔄 Modo Mover: toca el 1º bloque a mover';
+        mobileBar.classList.remove('hidden');
+      }
     }
   } else if (ui.selectedPaletteReqId) {
     const selReq = state.requirements.find((r) => r.id === ui.selectedPaletteReqId);
@@ -148,8 +175,25 @@ function renderSchedulerTab() {
       mobileBar.classList.remove('hidden');
     }
   } else {
-    hintEl.textContent = '💡 Haz clic en una asignatura a la izquierda, haz clic en una celda o arrastra un bloque sobre otro para intercambiarlos.';
+    hintEl.textContent = '💡 Haz clic en una asignatura a la izquierda, haz clic en una celda o usa 🔄 Mover / Intercambiar para hacer enroques.';
     if (mobileBar) mobileBar.classList.add('hidden');
+  }
+
+  // Alertas pedagógicas no bloqueantes (3+ bloques consecutivos de la misma asignatura)
+  const pedAlertEl = document.getElementById('coursePedagogicalAlert');
+  if (pedAlertEl && ui.activeCourseId) {
+    const warnings = findCourseConsecutiveWarnings(ui.activeCourseId);
+    if (warnings.length > 0) {
+      const summary = warnings
+        .slice(0, 3)
+        .map((w) => `<strong>${escapeHtml(w.subject)}</strong> (${w.count} seguidos el ${escapeHtml(w.dayName)})`)
+        .join(' · ');
+      const extra = warnings.length > 3 ? ` (+${warnings.length - 3} más)` : '';
+      pedAlertEl.innerHTML = `⚠️ <span><strong>Aviso pedagógico:</strong> ${summary}${extra}.</span>`;
+      pedAlertEl.classList.remove('hidden');
+    } else {
+      pedAlertEl.classList.add('hidden');
+    }
   }
 
   // Sincronizar selector de día móvil del horario de curso
@@ -175,7 +219,7 @@ function renderCourseCalendarGrid() {
   tbody.innerHTML = '';
 
   const selectedReq =
-    ui.selectedPaletteReqId && ui.selectedPaletteReqId !== 'ERASER'
+    ui.selectedPaletteReqId && ui.selectedPaletteReqId !== 'ERASER' && ui.selectedPaletteReqId !== 'SWAP'
       ? state.requirements.find((r) => r.id === ui.selectedPaletteReqId)
       : null;
 
@@ -220,6 +264,16 @@ function renderCourseCalendarGrid() {
 
       const key = slotKey(ui.activeCourseId, day.index, period.id);
       const currentAssignment = state.assignments[key];
+
+      if (
+        ui.selectedPaletteReqId === 'SWAP' &&
+        ui.swapSourceSlot &&
+        ui.swapSourceSlot.courseId === ui.activeCourseId &&
+        Number(ui.swapSourceSlot.dayIndex) === Number(day.index) &&
+        ui.swapSourceSlot.periodId === period.id
+      ) {
+        td.classList.add('slot-swap-source');
+      }
 
       let conflictOtherCourse = null;
       let teacherUnavailableHere = false;
@@ -352,6 +406,49 @@ function renderCourseCalendarGrid() {
 function handleCourseCellClick(courseId, dayIndex, periodId) {
   if (ui.selectedPaletteReqId === 'ERASER') {
     if (removeSlotAssignment(courseId, dayIndex, periodId)) {
+      renderAll();
+    }
+    return;
+  }
+
+  if (ui.selectedPaletteReqId === 'SWAP') {
+    const period = state.periods.find((p) => p.id === periodId);
+    if (isPeriodDisabledOnDay(period, dayIndex)) {
+      showToast('Este bloque no está habilitado para clases.', 'warn');
+      return;
+    }
+
+    if (!ui.swapSourceSlot) {
+      const existing = state.assignments[slotKey(courseId, dayIndex, periodId)];
+      if (!existing) {
+        showToast('Toca primero un bloque que ya tenga una clase asignada para moverlo o intercambiarlo.', 'info');
+        return;
+      }
+      ui.swapSourceSlot = { courseId, dayIndex, periodId };
+      renderSchedulerTab();
+      return;
+    }
+
+    // Si vuelve a tocar la misma celda, deselecciona el origen
+    if (
+      ui.swapSourceSlot.courseId === courseId &&
+      Number(ui.swapSourceSlot.dayIndex) === Number(dayIndex) &&
+      ui.swapSourceSlot.periodId === periodId
+    ) {
+      ui.swapSourceSlot = null;
+      renderSchedulerTab();
+      return;
+    }
+
+    const ok = swapOrMoveSlotsInCourse(
+      ui.swapSourceSlot.courseId,
+      ui.swapSourceSlot.dayIndex,
+      ui.swapSourceSlot.periodId,
+      dayIndex,
+      periodId
+    );
+    if (ok) {
+      ui.swapSourceSlot = null;
       renderAll();
     }
     return;
@@ -760,6 +857,7 @@ function renderTeacherViewTab() {
   const totalAulaChrono = (totalAulaPedag * 45) / 60;
   const contractChrono = Number(teacher.contractChrono || 38);
   const nonTeachingChrono = Math.max(0, contractChrono - totalAulaChrono);
+  const gapInfo = calculateTeacherGaps(teacher.id);
 
   document.getElementById('teacherViewStats').innerHTML = `
     <span class="stat-pill">🏷️ Sigla: <strong>${escapeHtml(teacher.initials)}</strong></span>
@@ -768,6 +866,7 @@ function renderTeacherViewTab() {
     ${sepHrs > 0 ? `<span class="stat-pill">🎯 SEP: <strong>+${sepHrs} hrs</strong></span>` : ''}
     <span class="stat-pill" title="Horas No Lectivas Cronológicas disponibles según contrato">📋 No Lectivas: <strong>${nonTeachingChrono.toFixed(1)}h cron.</strong></span>
     <span class="stat-pill">⏱️ Contrato: <strong>${contractChrono}h cron.</strong></span>
+    <span class="stat-pill ${gapInfo.totalGaps > 0 ? 'stat-pill-warn' : 'stat-pill-ok'}" title="Bloques libres intermedios entre la primera y última clase de un mismo día">🪟 Ventanas: <strong>${gapInfo.totalGaps}</strong></span>
   `;
 
   // Barra interactiva con todas las asignaturas y cursos de este profesor
@@ -934,6 +1033,10 @@ function renderTeacherViewTab() {
           </div>
         `;
       } else {
+        const isGapSlot = gapInfo.gapSlotKeys.has(`${day.index}__${period.id}`);
+        if (isGapSlot && !ui.availabilityEditMode && !selectedReqForTeacher) {
+          td.classList.add('slot-teacher-gap');
+        }
         td.innerHTML = `
           <div class="empty-slot-placeholder">
             ${
@@ -941,6 +1044,8 @@ function renderTeacherViewTab() {
                 ? '🔒 Clic para bloquear'
                 : selectedReqForTeacher
                 ? '+ Asignar aquí'
+                : isGapSlot
+                ? '🪟 Ventana (Libre intermedia)'
                 : 'Hora No Lectiva / Libre'
             }
           </div>
@@ -1003,6 +1108,57 @@ function renderTeachersManagementTab() {
   const tbody = document.getElementById('teachersTableBody');
   const query = (document.getElementById('searchTeacherInput')?.value || '').trim().toLowerCase();
   tbody.innerHTML = '';
+
+  // Dashboard resumen de cumplimiento 65/35 y carga horaria global
+  const kpiWrap = document.getElementById('workloadSummaryKpis');
+  if (kpiWrap) {
+    const regularTeachers = state.teachers.filter((t) => !t.isMultiCourseWorkshop);
+    let ok65Count = 0;
+    let over65Count = 0;
+    let totalPlannedAll = 0;
+    let totalScheduledAll = 0;
+    let totalGapsAll = 0;
+
+    regularTeachers.forEach((t) => {
+      const planned = getPlannedHoursForTeacher(t.id);
+      const scheduled = getAssignedHoursForTeacher(t.id);
+      const otherL = Number(t.otherLectivasHours || 0);
+      const sepH = Number(t.sepHours || 0);
+      const aulaChrono = ((scheduled + otherL + sepH) * 45) / 60;
+      const contract = Number(t.contractChrono || 38);
+      const pct = contract > 0 ? Math.round((aulaChrono / contract) * 100) : 0;
+      if (pct > 66) over65Count++;
+      else ok65Count++;
+      totalPlannedAll += planned;
+      totalScheduledAll += scheduled;
+      totalGapsAll += calculateTeacherGaps(t.id).totalGaps;
+    });
+
+    const pctGlobal = totalPlannedAll > 0 ? Math.min(100, Math.round((totalScheduledAll / totalPlannedAll) * 100)) : 0;
+
+    kpiWrap.innerHTML = `
+      <div class="workload-kpi-card">
+        <div class="workload-kpi-label">👨‍🏫 Planta Docente</div>
+        <div class="workload-kpi-value">${regularTeachers.length}</div>
+        <div class="workload-kpi-sub">Docentes activos (${currentSchoolYear})</div>
+      </div>
+      <div class="workload-kpi-card ${over65Count > 0 ? 'kpi-danger' : 'kpi-ok'}">
+        <div class="workload-kpi-label">⚖️ Cumplimiento Ley 65/35</div>
+        <div class="workload-kpi-value">${ok65Count} / ${regularTeachers.length}</div>
+        <div class="workload-kpi-sub">${over65Count > 0 ? `⚠️ ${over65Count} sobre 65% lectivo` : '✅ Todos dentro de norma'}</div>
+      </div>
+      <div class="workload-kpi-card">
+        <div class="workload-kpi-label">🗓️ Horas en Horario (1º-8º)</div>
+        <div class="workload-kpi-value">${totalScheduledAll} / ${totalPlannedAll}h</div>
+        <div class="workload-kpi-sub">${pctGlobal}% del plan asignado</div>
+      </div>
+      <div class="workload-kpi-card ${totalGapsAll > 0 ? 'kpi-warn' : 'kpi-ok'}">
+        <div class="workload-kpi-label">🪟 Ventanas Docentes</div>
+        <div class="workload-kpi-value">${totalGapsAll}</div>
+        <div class="workload-kpi-sub">Horas libres intermedias totales</div>
+      </div>
+    `;
+  }
 
   const filtered = state.teachers.filter(
     (t) =>

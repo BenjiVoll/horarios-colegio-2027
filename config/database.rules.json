@@ -2,14 +2,13 @@
   "rules": {
     ".read": false,
     ".write": false,
-    "sistema_horarios_2026": {
+    "sistema_horarios_years": {
       ".read": "auth != null",
-      ".write": "auth != null",
-      ".validate": "newData.hasChildren(['teachers', 'courses', 'periods', 'requirements', 'updatedAt'])"
+      ".write": "auth != null"
     },
-    "sistema_horarios_2027": {
-      ".read": "auth != null",
-      ".write": "auth != null",
+    "$yearKey": {
+      ".read": "auth != null && $yearKey.matches(/^sistema_horarios_[0-9]{4}$/)",
+      ".write": "auth != null && $yearKey.matches(/^sistema_horarios_[0-9]{4}$/)",
       ".validate": "newData.hasChildren(['teachers', 'courses', 'periods', 'requirements', 'updatedAt'])"
     }
   }

@@ -54,7 +54,24 @@ function initEventListeners() {
   if (btnClearActiveSel) {
     btnClearActiveSel.addEventListener('click', () => {
       ui.selectedPaletteReqId = null;
+      ui.swapSourceSlot = null;
       renderSchedulerTab();
+    });
+  }
+
+  // Navegación limpia hacia y desde Bloques y Recreos
+  const btnOpenBlocksTab = document.getElementById('btnOpenBlocksTab');
+  if (btnOpenBlocksTab) {
+    btnOpenBlocksTab.addEventListener('click', () => {
+      switchTab('tab-bloques');
+      renderPeriodsTab();
+    });
+  }
+
+  const btnBackFromBlocksTab = document.getElementById('btnBackFromBlocksTab');
+  if (btnBackFromBlocksTab) {
+    btnBackFromBlocksTab.addEventListener('click', () => {
+      switchTab('tab-manual');
     });
   }
 
@@ -104,7 +121,110 @@ function initEventListeners() {
     });
   }
 
-  // Selector de Año Escolar (2026 / 2027) con protección de cambios sin guardar
+  // Botón "+" y Modal para Crear / Clonar un Nuevo Año Escolar dinámicamente
+  const btnAddSchoolYear = document.getElementById('btnAddSchoolYear');
+  const newYearModal = document.getElementById('newSchoolYearModal');
+  const newYearForm = document.getElementById('newSchoolYearForm');
+  const inputNewYear = document.getElementById('inputNewSchoolYear');
+  const selectNewYearMode = document.getElementById('selectNewYearMode');
+  const newYearSourceLabel = document.getElementById('newYearSourceLabel');
+
+  const closeNewYearModal = () => {
+    if (newYearModal) newYearModal.classList.add('hidden');
+  };
+
+  if (btnAddSchoolYear && newYearModal) {
+    btnAddSchoolYear.addEventListener('click', () => {
+      const numericYears = availableSchoolYears.map(Number).filter((n) => !Number.isNaN(n));
+      const suggested = numericYears.length > 0 ? Math.max(...numericYears) + 1 : 2028;
+      if (inputNewYear) inputNewYear.value = String(suggested);
+      if (newYearSourceLabel) newYearSourceLabel.textContent = currentSchoolYear;
+      newYearModal.classList.remove('hidden');
+      if (inputNewYear) inputNewYear.focus();
+    });
+  }
+
+  const btnCloseNewYear = document.getElementById('btnCloseNewYearModal');
+  const btnCancelNewYear = document.getElementById('btnCancelNewYearModal');
+  if (btnCloseNewYear) btnCloseNewYear.addEventListener('click', closeNewYearModal);
+  if (btnCancelNewYear) btnCancelNewYear.addEventListener('click', closeNewYearModal);
+  if (newYearModal) {
+    newYearModal.addEventListener('click', (e) => {
+      if (e.target === newYearModal) closeNewYearModal();
+    });
+  }
+
+  if (newYearForm) {
+    newYearForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const targetYear = String(inputNewYear ? inputNewYear.value : '').trim();
+      if (!/^[0-9]{4}$/.test(targetYear)) {
+        showToast('Ingresa un año válido de 4 dígitos (ej. 2028).', 'warn');
+        return;
+      }
+      if (availableSchoolYears.includes(targetYear)) {
+        closeNewYearModal();
+        loadState(targetYear);
+        renderAll();
+        showToast(`📅 El año ${targetYear} ya existía. Cambiado a ${targetYear}.`, 'info');
+        return;
+      }
+      if (hasUnsavedChanges) {
+        const proceed = confirm(
+          `Tienes cambios sin guardar en ${currentSchoolYear}. ¿Deseas continuar creando el año ${targetYear}?`
+        );
+        if (!proceed) return;
+      }
+
+      const mode = selectNewYearMode ? selectNewYearMode.value : 'clone_structure';
+      let nextState;
+      if (mode === 'clone_all') {
+        nextState = JSON.parse(JSON.stringify(state));
+      } else if (mode === 'clone_structure') {
+        nextState = {
+          teachers: JSON.parse(JSON.stringify(state.teachers || [])),
+          courses: JSON.parse(JSON.stringify(state.courses || [])),
+          periods: JSON.parse(JSON.stringify(state.periods || [])),
+          requirements: JSON.parse(JSON.stringify(state.requirements || [])),
+          assignments: {},
+          teacherUnavailable: JSON.parse(JSON.stringify(state.teacherUnavailable || {}))
+        };
+      } else {
+        nextState = getInstitutionalBaseData(false);
+      }
+
+      nextState.updatedAt = Date.now();
+      nextState.clientId = CLIENT_SESSION_ID;
+
+      ensureYearInList(targetYear);
+      currentSchoolYear = targetYear;
+      localStorage.setItem(ACTIVE_YEAR_KEY, currentSchoolYear);
+      try {
+        localStorage.setItem(getStorageKeyForYear(currentSchoolYear), JSON.stringify(nextState));
+      } catch (err) {
+        console.error(err);
+      }
+
+      state = nextState;
+      undoStack = [];
+      lastSyncedUpdatedAt = 0;
+      ui.selectedPaletteReqId = null;
+      ui.swapSourceSlot = null;
+      ui.selectedTeacherViewReqId = null;
+
+      renderSchoolYearSelector();
+      saveState(true);
+      updateUndoButton();
+      renderAll();
+      closeNewYearModal();
+      showToast(
+        `📅 Año Escolar ${targetYear} creado. Presiona "💾 Guardar Cambios" para subirlo a la nube.`,
+        'success'
+      );
+    });
+  }
+
+  // Selector de Año Escolar con protección de cambios sin guardar
   document.getElementById('selectSchoolYear').addEventListener('change', (e) => {
     const selectedYear = e.target.value;
     if (hasUnsavedChanges) {
@@ -137,8 +257,18 @@ function initEventListeners() {
 
   document.getElementById('btnSelectEraser').addEventListener('click', () => {
     ui.selectedPaletteReqId = ui.selectedPaletteReqId === 'ERASER' ? null : 'ERASER';
+    ui.swapSourceSlot = null;
     renderSchedulerTab();
   });
+
+  const btnSelectSwapMode = document.getElementById('btnSelectSwapMode');
+  if (btnSelectSwapMode) {
+    btnSelectSwapMode.addEventListener('click', () => {
+      ui.selectedPaletteReqId = ui.selectedPaletteReqId === 'SWAP' ? null : 'SWAP';
+      ui.swapSourceSlot = null;
+      renderSchedulerTab();
+    });
+  }
 
   document.getElementById('btnAutoFillCourse').addEventListener('click', () => {
     if (!ui.activeCourseId) return;
@@ -447,6 +577,8 @@ function initEventListeners() {
       if (tdModal) tdModal.classList.add('hidden');
       const cModal = document.getElementById('cloudConfigModal');
       if (cModal) cModal.classList.add('hidden');
+      const nyModal = document.getElementById('newSchoolYearModal');
+      if (nyModal) nyModal.classList.add('hidden');
       closePdfExportModal();
     }
   });
