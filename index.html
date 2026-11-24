@@ -88,53 +88,69 @@
 
   <!-- Barra Superior -->
   <header class="topbar no-print">
-    <div class="brand">
-      <img src="assets/img/logo-colegio.png" alt="Christian College Logo" class="brand-logo" />
-      <div>
-        <h1>Christian College</h1>
-        <p class="subtitle">Sistema de Gestión de Horarios — Dirección y UTP (1º a 8º Básico)</p>
+    <div class="topbar-brand-row">
+      <div class="brand">
+        <img src="assets/img/logo-colegio.png" alt="Christian College Logo" class="brand-logo" />
+        <div>
+          <h1>Christian College</h1>
+          <p class="subtitle">Sistema de Gestión de Horarios — Dirección y UTP (1º a 8º Básico)</p>
+        </div>
       </div>
+      <button
+        type="button"
+        class="btn btn-outline-light btn-sm topbar-menu-toggle"
+        id="btnToggleTopbarMenu"
+        aria-expanded="false"
+        aria-controls="topbarSecondaryActions"
+        title="Mostrar u ocultar herramientas adicionales"
+      >
+        ☰ Más
+      </button>
     </div>
 
     <div class="topbar-actions">
-      <!-- Selector de Año Escolar -->
-      <div class="year-selector-box" title="Cambiar de Año Escolar (cada año guarda su propia planificación de forma independiente en la nube)">
-        <label for="selectSchoolYear">Año:</label>
-        <select id="selectSchoolYear" class="year-select">
-          <option value="2026">2026</option>
-          <option value="2027">2027</option>
-        </select>
-      </div>
+      <div class="topbar-primary-actions">
+        <!-- Selector de Año Escolar -->
+        <div class="year-selector-box" title="Cambiar de Año Escolar (cada año guarda su propia planificación de forma independiente en la nube)">
+          <label for="selectSchoolYear">Año:</label>
+          <select id="selectSchoolYear" class="year-select">
+            <option value="2026">2026</option>
+            <option value="2027">2027</option>
+          </select>
+        </div>
 
-      <div class="conflict-badge" id="globalConflictBadge" title="Estado de validación de topones en todo el colegio">
-        <span class="dot ok"></span>
-        <span id="globalConflictText">0 Topones</span>
-      </div>
+        <div class="conflict-badge" id="globalConflictBadge" title="Estado de validación de topones en todo el colegio">
+          <span class="dot ok"></span>
+          <span id="globalConflictText">0 Topones</span>
+        </div>
 
-      <button class="btn btn-outline-light btn-sm" id="btnUndo" title="Deshacer el último cambio realizado en el horario" disabled>
-        ↩️ Deshacer
-      </button>
-
-      <!-- Botón Principal para Guardar Cambios en la Base de Datos -->
-      <button class="btn btn-save-db btn-sm saved" id="btnSaveChanges" type="button" title="Guardar todos los cambios realizados en la Base de Datos en la Nube (Ctrl+S)">
-        ✅ Guardado
-      </button>
-
-      <button class="btn btn-outline-light btn-sm" id="btnExportCSV" title="Descargar planilla de horarios para abrir en planilla de cálculo">
-        📊 Exportar Planilla
-      </button>
-
-      <button class="btn btn-primary btn-sm" id="btnPrint" title="Generar y exportar documento PDF oficial con tamaño y diseño institucional exacto">
-        📄 Exportar PDF Oficial
-      </button>
-
-      <!-- Indicador de Sesión Activa y Cierre de Sesión -->
-      <div class="session-user-box" id="authSessionBadge" title="Sesión autenticada con Firebase Security">
-        <span class="session-lock-icon">🔒</span>
-        <span id="authUserEmailText" class="session-email-text">Autenticado</span>
-        <button class="btn-logout-pill" id="btnLogout" type="button" title="Cerrar sesión de forma segura">
-          Salir
+        <!-- Botón Principal para Guardar Cambios en la Base de Datos -->
+        <button class="btn btn-save-db btn-sm saved" id="btnSaveChanges" type="button" title="Guardar todos los cambios realizados en la Base de Datos en la Nube (Ctrl+S)">
+          ✅ Guardado
         </button>
+      </div>
+
+      <div class="topbar-secondary-actions" id="topbarSecondaryActions">
+        <button class="btn btn-outline-light btn-sm" id="btnUndo" title="Deshacer el último cambio realizado en el horario" disabled>
+          ↩️ Deshacer
+        </button>
+
+        <button class="btn btn-outline-light btn-sm" id="btnExportCSV" title="Descargar planilla de horarios para abrir en planilla de cálculo">
+          📊 Exportar Planilla
+        </button>
+
+        <button class="btn btn-primary btn-sm" id="btnPrint" title="Generar y exportar documento PDF oficial con tamaño y diseño institucional exacto">
+          📄 Exportar PDF Oficial
+        </button>
+
+        <!-- Indicador de Sesión Activa y Cierre de Sesión -->
+        <div class="session-user-box" id="authSessionBadge" title="Sesión autenticada con Firebase Security">
+          <span class="session-lock-icon">🔒</span>
+          <span id="authUserEmailText" class="session-email-text">Autenticado</span>
+          <button class="btn-logout-pill" id="btnLogout" type="button" title="Cerrar sesión de forma segura">
+            Salir
+          </button>
+        </div>
       </div>
     </div>
   </header>
@@ -180,7 +196,7 @@
       <div class="scheduler-layout">
         <!-- Panel Lateral Izquierdo -->
         <aside class="scheduler-sidebar no-print">
-          <div class="card">
+          <div class="card sidebar-course-card">
             <div class="card-header">
               <h2>1. Seleccionar Curso</h2>
             </div>
@@ -191,30 +207,42 @@
             </div>
           </div>
 
-          <div class="card">
+          <div class="card sidebar-palette-card" id="sidebarPaletteCard">
             <div class="card-header-flex">
               <h2>2. Asignaturas del Curso</h2>
-              <button class="btn btn-xs btn-link" id="btnGoToCoursePlan" title="Editar asignaturas y profesores de este curso">
-                ⚙️ Editar Plan
-              </button>
+              <div class="palette-header-actions">
+                <button class="btn btn-xs btn-link" id="btnGoToCoursePlan" title="Editar asignaturas y profesores de este curso">
+                  ⚙️ Editar Plan
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-outline mobile-collapse-btn"
+                  id="btnTogglePaletteMobile"
+                  aria-expanded="true"
+                >
+                  ▾ Ocultar
+                </button>
+              </div>
             </div>
-            <p class="helper-text">
-              Haz <strong>clic</strong> en una asignatura y luego en el calendario (o <strong>arrástrala</strong>). También puedes arrastrar un bloque ya asignado hacia otro para <strong>intercambiarlos</strong>.
-            </p>
-            <div id="courseSubjectsPalette" class="palette-list"></div>
+            <div class="collapsible-card-content" id="paletteCardContent">
+              <p class="helper-text">
+                Haz <strong>clic</strong> en una asignatura y luego en el calendario (o <strong>arrástrala</strong>). También puedes arrastrar un bloque ya asignado hacia otro para <strong>intercambiarlos</strong>.
+              </p>
+              <div id="courseSubjectsPalette" class="palette-list"></div>
 
-            <div class="eraser-box">
-              <button id="btnSelectEraser" class="palette-item eraser-item" type="button">
-                <span class="eraser-icon">🧹</span>
-                <div>
-                  <strong>Modo Borrador</strong>
-                  <small>Haz clic en un bloque del horario para vaciarlo</small>
-                </div>
-              </button>
+              <div class="eraser-box">
+                <button id="btnSelectEraser" class="palette-item eraser-item" type="button">
+                  <span class="eraser-icon">🧹</span>
+                  <div>
+                    <strong>Modo Borrador</strong>
+                    <small>Haz clic en un bloque del horario para vaciarlo</small>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
 
-          <div class="card">
+          <div class="card sidebar-actions-card">
             <div class="card-header">
               <h2>3. Acciones de Este Curso</h2>
             </div>
@@ -260,8 +288,24 @@
               </div>
             </div>
 
+            <!-- Barra flotante de selección activa (útil en tablet/móvil al hacer scroll) -->
+            <div id="mobileActiveSelectionBar" class="mobile-selection-bar hidden no-print">
+              <span id="mobileActiveSelectionText"></span>
+              <button type="button" class="btn btn-xs btn-outline" id="btnClearActiveSelection">✕ Soltar</button>
+            </div>
+
+            <!-- Selector rápido de día para móvil (<= 768px) -->
+            <div class="mobile-day-bar no-print" id="courseMobileDayBar" role="tablist" aria-label="Seleccionar día">
+              <button type="button" class="mobile-day-btn active" data-day="0">Lun</button>
+              <button type="button" class="mobile-day-btn" data-day="1">Mar</button>
+              <button type="button" class="mobile-day-btn" data-day="2">Mié</button>
+              <button type="button" class="mobile-day-btn" data-day="3">Jue</button>
+              <button type="button" class="mobile-day-btn" data-day="4">Vie</button>
+              <button type="button" class="mobile-day-btn" data-day="ALL">📅 Semana</button>
+            </div>
+
             <div class="table-responsive">
-              <table class="schedule-table" id="courseScheduleTable">
+              <table class="schedule-table" id="courseScheduleTable" data-mobile-day="0">
                 <thead>
                   <tr id="courseScheduleHeader"></tr>
                 </thead>
@@ -340,8 +384,18 @@
             <button class="btn btn-xs btn-primary" id="btnExitAvailabilityMode">Listo</button>
           </div>
 
+          <!-- Selector rápido de día para móvil (<= 768px) -->
+          <div class="mobile-day-bar no-print" id="teacherMobileDayBar" role="tablist" aria-label="Seleccionar día">
+            <button type="button" class="mobile-day-btn active" data-day="0">Lun</button>
+            <button type="button" class="mobile-day-btn" data-day="1">Mar</button>
+            <button type="button" class="mobile-day-btn" data-day="2">Mié</button>
+            <button type="button" class="mobile-day-btn" data-day="3">Jue</button>
+            <button type="button" class="mobile-day-btn" data-day="4">Vie</button>
+            <button type="button" class="mobile-day-btn" data-day="ALL">📅 Semana</button>
+          </div>
+
           <div class="table-responsive">
-            <table class="schedule-table" id="teacherScheduleTable">
+            <table class="schedule-table" id="teacherScheduleTable" data-mobile-day="0">
               <thead>
                 <tr id="teacherScheduleHeader"></tr>
               </thead>
@@ -356,11 +410,19 @@
     <section id="tab-profesores" class="tab-panel">
       <div class="management-grid">
         <!-- Formulario Crear/Editar Profesor -->
-        <div class="card no-print">
-          <div class="card-header">
+        <div class="card no-print mobile-collapsible-card is-collapsed-mobile" id="teacherFormCard">
+          <div class="card-header-flex">
             <h2 id="teacherFormTitle">Agregar / Editar Profesor(a)</h2>
+            <button
+              type="button"
+              class="btn btn-xs btn-outline mobile-collapse-btn"
+              id="btnToggleTeacherFormMobile"
+              aria-expanded="false"
+            >
+              + Mostrar Formulario
+            </button>
           </div>
-          <form id="teacherForm" class="card-body form-stack">
+          <form id="teacherForm" class="card-body form-stack collapsible-card-content">
             <input type="hidden" id="teacherIdInput" />
             <div class="form-row">
               <div class="form-group">
@@ -526,11 +588,19 @@
     <!-- ==================== TAB 6: CONFIGURACIÓN DE BLOQUES HORARIOS ==================== -->
     <section id="tab-bloques" class="tab-panel">
       <div class="management-grid">
-        <div class="card no-print">
-          <div class="card-header">
+        <div class="card no-print mobile-collapsible-card is-collapsed-mobile" id="periodFormCard">
+          <div class="card-header-flex">
             <h2>Agregar Bloque o Recreo</h2>
+            <button
+              type="button"
+              class="btn btn-xs btn-outline mobile-collapse-btn"
+              id="btnTogglePeriodFormMobile"
+              aria-expanded="false"
+            >
+              + Mostrar Formulario
+            </button>
           </div>
-          <form id="periodForm" class="card-body form-stack">
+          <form id="periodForm" class="card-body form-stack collapsible-card-content">
             <div class="form-group">
               <label for="periodLabelInput">Nombre del Bloque *</label>
               <input type="text" id="periodLabelInput" class="form-control" placeholder="Ej: Bloque 9 o Recreo" required />

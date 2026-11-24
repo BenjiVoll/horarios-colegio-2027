@@ -55,7 +55,9 @@ let ui = {
   availabilityEditMode: false,
   modalTargetSlot: null,
   panoramaActiveDay: '0', // '0'..'4' o 'WEEK'
-  panoramaHighlightTeacherId: ''
+  panoramaHighlightTeacherId: '',
+  courseMobileDay: '0', // '0'..'4' o 'ALL' (solo afecta vista móvil <= 768px)
+  teacherMobileDay: '0' // '0'..'4' o 'ALL' (solo afecta vista móvil <= 768px)
 };
 
 function getStorageKeyForYear(year) {

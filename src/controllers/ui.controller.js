@@ -128,17 +128,38 @@ function renderSchedulerTab() {
   document.getElementById('btnSelectEraser').classList.toggle('selected', ui.selectedPaletteReqId === 'ERASER');
 
   const hintEl = document.getElementById('calendarActiveSelectionHint');
+  const mobileBar = document.getElementById('mobileActiveSelectionBar');
+  const mobileBarText = document.getElementById('mobileActiveSelectionText');
+
   if (ui.selectedPaletteReqId === 'ERASER') {
     hintEl.textContent = '🧹 Modo Borrador activo: haz clic sobre cualquier bloque asignado para vaciarlo.';
+    if (mobileBar && mobileBarText) {
+      mobileBarText.textContent = '🧹 Modo Borrador activo — toca un bloque para vaciarlo';
+      mobileBar.classList.remove('hidden');
+    }
   } else if (ui.selectedPaletteReqId) {
     const selReq = state.requirements.find((r) => r.id === ui.selectedPaletteReqId);
     const selTeacher = selReq ? state.teachers.find((t) => t.id === selReq.teacherId) : null;
     hintEl.textContent = selReq
       ? `📌 Asignando: ${selReq.subject} — ${selTeacher ? `${selTeacher.name} (${selTeacher.initials})` : ''} (Los bloques donde ya hace clases en otro curso aparecen bloqueados en rojo).`
       : '';
+    if (mobileBar && mobileBarText && selReq) {
+      mobileBarText.textContent = `📌 Asignando: ${selReq.shortCode || selReq.subject} (${selTeacher ? selTeacher.initials : ''})`;
+      mobileBar.classList.remove('hidden');
+    }
   } else {
     hintEl.textContent = '💡 Haz clic en una asignatura a la izquierda, haz clic en una celda o arrastra un bloque sobre otro para intercambiarlos.';
+    if (mobileBar) mobileBar.classList.add('hidden');
   }
+
+  // Sincronizar selector de día móvil del horario de curso
+  const courseTableEl = document.getElementById('courseScheduleTable');
+  if (courseTableEl) {
+    courseTableEl.dataset.mobileDay = String(ui.courseMobileDay || '0');
+  }
+  document.querySelectorAll('#courseMobileDayBar .mobile-day-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.day === String(ui.courseMobileDay || '0'));
+  });
 
   renderCourseCalendarGrid();
 }
@@ -149,7 +170,7 @@ function renderCourseCalendarGrid() {
 
   headerRow.innerHTML =
     `<th class="time-col">Hora (Lun-Jue / Vie)</th>` +
-    DAYS.map((d) => `<th>${d.name}</th>`).join('');
+    DAYS.map((d) => `<th data-day-col="${d.index}">${d.name}</th>`).join('');
 
   tbody.innerHTML = '';
 
@@ -188,6 +209,7 @@ function renderCourseCalendarGrid() {
     DAYS.forEach((day) => {
       const td = document.createElement('td');
       td.className = 'slot-cell';
+      td.dataset.dayCol = String(day.index);
 
       if (isPeriodDisabledOnDay(period, day.index)) {
         td.classList.add('slot-disabled-friday');
@@ -802,12 +824,21 @@ function renderTeacherViewTab() {
 
   document.getElementById('availabilityModeBanner').classList.toggle('hidden', !ui.availabilityEditMode);
 
+  // Sincronizar selector de día móvil del horario docente
+  const teacherTableEl = document.getElementById('teacherScheduleTable');
+  if (teacherTableEl) {
+    teacherTableEl.dataset.mobileDay = String(ui.teacherMobileDay || '0');
+  }
+  document.querySelectorAll('#teacherMobileDayBar .mobile-day-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.day === String(ui.teacherMobileDay || '0'));
+  });
+
   const headerRow = document.getElementById('teacherScheduleHeader');
   const tbody = document.getElementById('teacherScheduleBody');
 
   headerRow.innerHTML =
     `<th class="time-col">Bloque / Hora</th>` +
-    DAYS.map((d) => `<th>${d.name}</th>`).join('');
+    DAYS.map((d) => `<th data-day-col="${d.index}">${d.name}</th>`).join('');
   tbody.innerHTML = '';
 
   const selectedReqForTeacher = ui.selectedTeacherViewReqId
@@ -837,6 +868,7 @@ function renderTeacherViewTab() {
     DAYS.forEach((day) => {
       const td = document.createElement('td');
       td.className = 'slot-cell';
+      td.dataset.dayCol = String(day.index);
 
       if (isPeriodDisabledOnDay(period, day.index)) {
         td.classList.add('slot-disabled-friday');
@@ -1064,6 +1096,15 @@ function renderTeachersManagementTab() {
       if (nonTeachInput) nonTeachInput.value = t.nonTeachingDetail || '';
       document.getElementById('teacherColorInput').value = t.color;
       document.getElementById('btnCancelTeacherEdit').classList.remove('hidden');
+      const teacherFormCard = document.getElementById('teacherFormCard');
+      const teacherFormToggleBtn = document.getElementById('btnToggleTeacherFormMobile');
+      if (teacherFormCard) {
+        teacherFormCard.classList.remove('is-collapsed-mobile');
+      }
+      if (teacherFormToggleBtn) {
+        teacherFormToggleBtn.setAttribute('aria-expanded', 'true');
+        teacherFormToggleBtn.textContent = '▾ Ocultar';
+      }
       document.getElementById('teacherForm').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
 
@@ -1128,19 +1169,21 @@ function openTeacherDetailModal(teacherId) {
 
       <div>
         <h4 style="margin-bottom:0.4rem;">I. Horas Lectivas en Cursos (1º a 8º Básico)</h4>
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Asignatura y Curso</th>
-              <th>Plan</th>
-              <th>En Horario</th>
-              <th>Hrs Cronológicas</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${reqRows || '<tr><td colspan="4">Sin asignaturas directas</td></tr>'}
-          </tbody>
-        </table>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Asignatura y Curso</th>
+                <th>Plan</th>
+                <th>En Horario</th>
+                <th>Hrs Cronológicas</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${reqRows || '<tr><td colspan="4">Sin asignaturas directas</td></tr>'}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div style="background:#eff6ff; padding:0.75rem; border-radius:8px; border:1px solid #bfdbfe; font-size:0.84rem;">

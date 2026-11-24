@@ -1,10 +1,77 @@
 function initEventListeners() {
+  // Menú colapsable del topbar en tablet/móvil
+  const btnToggleTopbar = document.getElementById('btnToggleTopbarMenu');
+  const topbarSecondary = document.getElementById('topbarSecondaryActions');
+  const closeTopbarMenu = () => {
+    if (topbarSecondary) topbarSecondary.classList.remove('is-open');
+    if (btnToggleTopbar) {
+      btnToggleTopbar.setAttribute('aria-expanded', 'false');
+      btnToggleTopbar.textContent = '☰ Más';
+    }
+  };
+  if (btnToggleTopbar && topbarSecondary) {
+    btnToggleTopbar.addEventListener('click', () => {
+      const willOpen = !topbarSecondary.classList.contains('is-open');
+      topbarSecondary.classList.toggle('is-open', willOpen);
+      btnToggleTopbar.setAttribute('aria-expanded', String(willOpen));
+      btnToggleTopbar.textContent = willOpen ? '✕ Cerrar' : '☰ Más';
+    });
+  }
+
   document.querySelectorAll('.nav-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
+      closeTopbarMenu();
       switchTab(btn.dataset.tab);
       renderAll();
     });
   });
+
+  // Selectores rápidos de día para móvil (<= 768px) en Horario por Curso y Horario por Profesor
+  document.querySelectorAll('#courseMobileDayBar .mobile-day-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      ui.courseMobileDay = btn.dataset.day;
+      const tbl = document.getElementById('courseScheduleTable');
+      if (tbl) tbl.dataset.mobileDay = String(ui.courseMobileDay);
+      document.querySelectorAll('#courseMobileDayBar .mobile-day-btn').forEach((b) => {
+        b.classList.toggle('active', b === btn);
+      });
+    });
+  });
+
+  document.querySelectorAll('#teacherMobileDayBar .mobile-day-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      ui.teacherMobileDay = btn.dataset.day;
+      const tbl = document.getElementById('teacherScheduleTable');
+      if (tbl) tbl.dataset.mobileDay = String(ui.teacherMobileDay);
+      document.querySelectorAll('#teacherMobileDayBar .mobile-day-btn').forEach((b) => {
+        b.classList.toggle('active', b === btn);
+      });
+    });
+  });
+
+  // Botón para soltar selección activa desde la barra pegajosa móvil/tablet
+  const btnClearActiveSel = document.getElementById('btnClearActiveSelection');
+  if (btnClearActiveSel) {
+    btnClearActiveSel.addEventListener('click', () => {
+      ui.selectedPaletteReqId = null;
+      renderSchedulerTab();
+    });
+  }
+
+  // Botones para plegar/desplegar tarjetas largas en móvil
+  const setupMobileCollapse = (btnId, cardId, showText, hideText) => {
+    const btn = document.getElementById(btnId);
+    const card = document.getElementById(cardId);
+    if (!btn || !card) return;
+    btn.addEventListener('click', () => {
+      const isCollapsed = card.classList.toggle('is-collapsed-mobile');
+      btn.setAttribute('aria-expanded', String(!isCollapsed));
+      btn.textContent = isCollapsed ? showText : hideText;
+    });
+  };
+  setupMobileCollapse('btnTogglePaletteMobile', 'sidebarPaletteCard', '▸ Mostrar', '▾ Ocultar');
+  setupMobileCollapse('btnToggleTeacherFormMobile', 'teacherFormCard', '+ Mostrar Formulario', '▾ Ocultar');
+  setupMobileCollapse('btnTogglePeriodFormMobile', 'periodFormCard', '+ Mostrar Formulario', '▾ Ocultar');
 
   // Botón Deshacer
   document.getElementById('btnUndo').addEventListener('click', performUndo);
@@ -306,6 +373,12 @@ function initEventListeners() {
 
   document.getElementById('btnCloseModal').addEventListener('click', closeQuickAssignModal);
   document.getElementById('btnModalCancel').addEventListener('click', closeQuickAssignModal);
+  const cellAssignModal = document.getElementById('cellAssignModal');
+  if (cellAssignModal) {
+    cellAssignModal.addEventListener('click', (e) => {
+      if (e.target === cellAssignModal) closeQuickAssignModal();
+    });
+  }
   document.getElementById('btnModalClearCell').addEventListener('click', () => {
     if (ui.modalTargetSlot) {
       removeSlotAssignment(
@@ -318,12 +391,18 @@ function initEventListeners() {
     }
   });
 
+  const teacherDetailModal = document.getElementById('teacherDetailModal');
   document.getElementById('btnCloseTeacherDetail').addEventListener('click', () => {
-    document.getElementById('teacherDetailModal').classList.add('hidden');
+    teacherDetailModal.classList.add('hidden');
   });
   document.getElementById('btnCloseTeacherDetailFooter').addEventListener('click', () => {
-    document.getElementById('teacherDetailModal').classList.add('hidden');
+    teacherDetailModal.classList.add('hidden');
   });
+  if (teacherDetailModal) {
+    teacherDetailModal.addEventListener('click', (e) => {
+      if (e.target === teacherDetailModal) teacherDetailModal.classList.add('hidden');
+    });
+  }
 
   const btnLoadBase = document.getElementById('btnLoadBaseSchedule');
   if (btnLoadBase) {
@@ -362,6 +441,13 @@ function initEventListeners() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
       commitSaveToDatabase();
+    } else if (e.key === 'Escape') {
+      closeQuickAssignModal();
+      const tdModal = document.getElementById('teacherDetailModal');
+      if (tdModal) tdModal.classList.add('hidden');
+      const cModal = document.getElementById('cloudConfigModal');
+      if (cModal) cModal.classList.add('hidden');
+      closePdfExportModal();
     }
   });
 
@@ -394,6 +480,12 @@ function initEventListeners() {
 
   const btnCancelCloud = document.getElementById('btnCancelCloudModal');
   if (btnCancelCloud) btnCancelCloud.addEventListener('click', closeCloudModal);
+
+  if (cloudModal) {
+    cloudModal.addEventListener('click', (e) => {
+      if (e.target === cloudModal) closeCloudModal();
+    });
+  }
 
   const btnCopyRules = document.getElementById('btnCopySecurityRules');
   if (btnCopyRules) {
