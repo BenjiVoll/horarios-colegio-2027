@@ -1,11 +1,12 @@
 /* ==========================================================================
-   HISTORIAL PARA DESHACER (UNDO)
+   HISTORIAL PARA DESHACER / REHACER (UNDO / REDO)
    ========================================================================== */
 function pushUndoSnapshot() {
   undoStack.push(JSON.stringify(state));
-  if (undoStack.length > 25) {
+  if (undoStack.length > 30) {
     undoStack.shift();
   }
+  redoStack = [];
   updateUndoButton();
 }
 
@@ -13,6 +14,10 @@ function performUndo() {
   if (undoStack.length === 0) return;
   const previousJson = undoStack.pop();
   try {
+    redoStack.push(JSON.stringify(state));
+    if (redoStack.length > 30) {
+      redoStack.shift();
+    }
     state = JSON.parse(previousJson);
     saveState();
     renderAll();
@@ -23,10 +28,32 @@ function performUndo() {
   updateUndoButton();
 }
 
+function performRedo() {
+  if (redoStack.length === 0) return;
+  const nextJson = redoStack.pop();
+  try {
+    undoStack.push(JSON.stringify(state));
+    if (undoStack.length > 30) {
+      undoStack.shift();
+    }
+    state = JSON.parse(nextJson);
+    saveState();
+    renderAll();
+    showToast('↪️ Se rehizo el último cambio.', 'info');
+  } catch (err) {
+    console.error('Error al rehacer:', err);
+  }
+  updateUndoButton();
+}
+
 function updateUndoButton() {
-  const btn = document.getElementById('btnUndo');
-  if (btn) {
-    btn.disabled = undoStack.length === 0;
+  const btnUndo = document.getElementById('btnUndo');
+  if (btnUndo) {
+    btnUndo.disabled = undoStack.length === 0;
+  }
+  const btnRedo = document.getElementById('btnRedo');
+  if (btnRedo) {
+    btnRedo.disabled = redoStack.length === 0;
   }
 }
 

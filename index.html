@@ -135,8 +135,12 @@
       </div>
 
       <div class="topbar-secondary-actions" id="topbarSecondaryActions">
-        <button class="btn btn-outline-light btn-sm" id="btnUndo" title="Deshacer el último cambio realizado en el horario" disabled>
+        <button class="btn btn-outline-light btn-sm" id="btnUndo" title="Deshacer el último cambio realizado en el horario (Ctrl+Z)" disabled>
           ↩️ Deshacer
+        </button>
+
+        <button class="btn btn-outline-light btn-sm" id="btnRedo" title="Rehacer el último cambio deshecho (Ctrl+Y)" disabled>
+          ↪️ Rehacer
         </button>
 
         <button class="btn btn-outline-light btn-sm" id="btnExportCSV" title="Descargar planilla de horarios para abrir en planilla de cálculo">
@@ -296,6 +300,9 @@
                 <span class="legend-item"><span class="legend-box free"></span> Libre</span>
                 <span class="legend-item"><span class="legend-box conflict"></span> Topón (Ocupado en otro curso)</span>
                 <span class="legend-item"><span class="legend-box unavailable"></span> No disponible / Viernes tarde</span>
+                <button class="btn btn-outline btn-xs" id="btnShareCourseWhatsApp" type="button" title="Copiar y compartir el horario de este curso por WhatsApp">
+                  💬 WhatsApp
+                </button>
               </div>
             </div>
 
@@ -363,6 +370,10 @@
                 <option value="">Mostrar todos por igual</option>
               </select>
             </div>
+
+            <button class="btn btn-outline btn-sm" id="btnOpenFreeTeachersPanorama" type="button" title="Ver qué profesores están libres y disponibles en un día y bloque">
+              🧑‍🏫 Buscar Reemplazo
+            </button>
           </div>
         </div>
 
@@ -381,6 +392,12 @@
             </div>
             <div id="teacherViewStats" class="teacher-stats-pills"></div>
             <div class="no-print" style="display:flex; gap:0.45rem; flex-wrap:wrap;">
+              <button class="btn btn-outline btn-sm" id="btnShareTeacherWhatsApp" type="button" title="Copiar y compartir el horario de este profesor por WhatsApp">
+                💬 WhatsApp
+              </button>
+              <button class="btn btn-outline btn-sm" id="btnOpenFreeTeachersFromView" type="button" title="Buscar qué profesores están libres en un día y bloque específico">
+                🧑‍🏫 Buscar Reemplazo
+              </button>
               <button class="btn btn-outline btn-sm" id="btnOpenTeacherFichaFromView" type="button" title="Abrir Ficha de Carga Horaria y Proporción 65/35">
                 📋 Ficha 65/35
               </button>
@@ -555,6 +572,29 @@
             <div id="coursePlanBadge" class="badge-pill">0 / 38 hrs</div>
           </div>
 
+          <!-- Edición de Curso, Profesor Jefe y Copia Rápida de Plan -->
+          <div class="course-meta-bar no-print" id="courseMetaBar">
+            <div class="course-meta-group">
+              <label for="editCourseNameInput">Nombre del Curso</label>
+              <input type="text" id="editCourseNameInput" class="form-control form-control-sm" placeholder="Ej: 1º Básico" />
+            </div>
+            <div class="course-meta-group">
+              <label for="editCourseHeadTeacherSelect">Profesor(a) Jefe (aparece en PDF)</label>
+              <select id="editCourseHeadTeacherSelect" class="form-control form-control-sm">
+                <option value="">Sin profesor jefe asignado</option>
+              </select>
+            </div>
+            <div class="course-meta-actions">
+              <button type="button" class="btn btn-outline btn-sm" id="btnSaveCourseMeta">💾 Guardar Curso</button>
+            </div>
+            <div class="course-meta-copy">
+              <select id="selectCopyPlanSourceCourse" class="form-control form-control-sm" title="Seleccionar curso origen para copiar su plan de estudio">
+                <option value="">Copiar plan desde otro curso...</option>
+              </select>
+              <button type="button" class="btn btn-outline btn-sm" id="btnCopyCoursePlan">📋 Copiar Plan</button>
+            </div>
+          </div>
+
           <form id="requirementForm" class="card-body requirement-form no-print">
             <input type="hidden" id="reqIdInput" />
             <div class="req-form-grid">
@@ -574,6 +614,18 @@
               <div class="form-group">
                 <label for="reqHoursInput">Hrs Semanales *</label>
                 <input type="number" id="reqHoursInput" class="form-control" min="1" max="20" value="4" required />
+              </div>
+              <div class="form-group">
+                <label for="reqRoomInput">Sala / Espacio (Opcional)</label>
+                <input type="text" id="reqRoomInput" class="form-control" placeholder="Ej: Gimnasio, CRA" list="roomsSuggestions" />
+                <datalist id="roomsSuggestions">
+                  <option value="Gimnasio"></option>
+                  <option value="Lab. Ciencias"></option>
+                  <option value="Sala Computación"></option>
+                  <option value="Biblioteca CRA"></option>
+                  <option value="Sala de Música"></option>
+                  <option value="Sala de Artes"></option>
+                </datalist>
               </div>
               <div class="form-group req-form-btn">
                 <button type="submit" class="btn btn-primary" id="btnSaveRequirement">+ Guardar</button>
@@ -801,6 +853,11 @@
         </div>
       </div>
     </section>
+
+    <!-- Barra discreta de auditoría de último guardado -->
+    <footer class="audit-status-bar no-print" id="lastSavedAuditBar">
+      <span id="lastSavedAuditText">🕒 Sincronización institucional Christian College</span>
+    </footer>
 
   </main>
 
@@ -1030,6 +1087,41 @@
             📥 Descargar PDF Oficial
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Buscador de Reemplazos (¿Quién está libre en un bloque?) -->
+  <div id="freeTeachersModal" class="modal-backdrop hidden no-print">
+    <div class="modal-dialog" style="max-width:600px;">
+      <div class="modal-header">
+        <h3>🧑‍🏫 Buscador de Reemplazos — Profesores Libres</h3>
+        <button class="modal-close" id="btnCloseFreeTeachersModal" type="button">✕</button>
+      </div>
+      <div class="modal-body form-stack">
+        <p class="helper-text" style="padding:0;">
+          Selecciona un día y bloque para ver qué docentes están <strong>libres y disponibles</strong> (sin clases ni bloqueo de disponibilidad) para cubrir un reemplazo.
+        </p>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="freeSearchDaySelect">Día</label>
+            <select id="freeSearchDaySelect" class="form-control">
+              <option value="0">Lunes</option>
+              <option value="1">Martes</option>
+              <option value="2">Miércoles</option>
+              <option value="3">Jueves</option>
+              <option value="4">Viernes</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="freeSearchPeriodSelect">Bloque Horario</label>
+            <select id="freeSearchPeriodSelect" class="form-control"></select>
+          </div>
+        </div>
+        <div id="freeTeachersResultsContainer" class="free-teachers-results"></div>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end;">
+        <button class="btn btn-outline btn-sm" id="btnCancelFreeTeachersModal" type="button">Cerrar</button>
       </div>
     </div>
   </div>

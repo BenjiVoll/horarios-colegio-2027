@@ -32,6 +32,7 @@ let currentSchoolYear = '2026';
 let availableSchoolYears = ['2026', '2027'];
 let lastSyncedUpdatedAt = 0;
 let undoStack = [];
+let redoStack = [];
 let cloudSyncTimer = null;
 let isPushingToCloud = false;
 let hasUnsavedChanges = false;
@@ -82,6 +83,18 @@ function getCloudEndpoint(year) {
   const baseUrl = getActiveFirebaseUrl();
   if (!baseUrl) return '';
   return `${baseUrl}/sistema_horarios_${year}.json`;
+}
+
+function getCloudUpdatedAtEndpoint(year) {
+  const baseUrl = getActiveFirebaseUrl();
+  if (!baseUrl) return '';
+  return `${baseUrl}/sistema_horarios_${year}/updatedAt.json`;
+}
+
+function getCloudYearsEndpoint() {
+  const baseUrl = getActiveFirebaseUrl();
+  if (!baseUrl) return '';
+  return `${baseUrl}/sistema_horarios_years.json`;
 }
 
 function loadAvailableSchoolYears() {

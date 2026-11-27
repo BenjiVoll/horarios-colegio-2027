@@ -169,6 +169,63 @@ function findCourseConsecutiveWarnings(courseId) {
 }
 
 /**
+ * Busca todos los docentes libres y disponibles en un día y bloque específico (para reemplazos rápidos).
+ */
+function findAvailableTeachersAtSlot(dayIndex, periodId) {
+  const period = state.periods.find((p) => p.id === periodId);
+  if (!period || isPeriodDisabledOnDay(period, dayIndex)) {
+    return { free: [], busy: [], unavailable: [] };
+  }
+
+  const free = [];
+  const busy = [];
+  const unavailable = [];
+
+  state.teachers.forEach((t) => {
+    if (t.isMultiCourseWorkshop) return;
+    const assignedCount = getAssignedHoursForTeacher(t.id);
+    const plannedCount = getPlannedHoursForTeacher(t.id);
+    const slots = findTeacherAssignmentsAtSlot(t.id, dayIndex, periodId);
+    if (slots.length > 0) {
+      const courseNames = slots
+        .map((s) => state.courses.find((c) => c.id === s.courseId)?.short || '')
+        .filter(Boolean)
+        .join(', ');
+      busy.push({ teacher: t, assignedCount, plannedCount, detail: `${slots[0].subject} (${courseNames})` });
+    } else if (isTeacherUnavailable(t.id, dayIndex, periodId)) {
+      unavailable.push({ teacher: t, assignedCount, plannedCount });
+    } else {
+      free.push({ teacher: t, assignedCount, plannedCount });
+    }
+  });
+
+  free.sort((a, b) => a.assignedCount - b.assignedCount || a.teacher.name.localeCompare(b.teacher.name));
+  return { free, busy, unavailable };
+}
+
+/**
+ * Detecta si una sala/espacio compartido ya está ocupado por otro curso en el mismo día y bloque.
+ */
+function findRoomConflict(room, dayIndex, periodId, ignoreCourseId = null) {
+  const cleanRoom = String(room || '').trim().toLowerCase();
+  if (!cleanRoom) return null;
+
+  for (const key in state.assignments) {
+    const a = state.assignments[key];
+    if (
+      a.room &&
+      String(a.room).trim().toLowerCase() === cleanRoom &&
+      Number(a.dayIndex) === Number(dayIndex) &&
+      a.periodId === periodId &&
+      a.courseId !== ignoreCourseId
+    ) {
+      return a;
+    }
+  }
+  return null;
+}
+
+/**
  * Intercambia (hace enroque) o mueve un bloque ya asignado hacia otro bloque del mismo curso.
  */
 function swapOrMoveSlotsInCourse(courseId, fromDay, fromPeriodId, toDay, toPeriodId) {
@@ -337,8 +394,20 @@ function assignRequirementToSlot(courseId, dayIndex, periodId, reqId, silent = f
     reqId: req.id,
     teacherId: teacher.id,
     subject: req.subject,
-    shortCode: req.shortCode || req.subject.slice(0, 4).toUpperCase()
+    shortCode: req.shortCode || req.subject.slice(0, 4).toUpperCase(),
+    room: (req.room || '').trim()
   };
+
+  if (!silent && req.room) {
+    const roomClash = findRoomConflict(req.room, dayIndex, periodId, courseId);
+    if (roomClash) {
+      const otherCourse = state.courses.find((c) => c.id === roomClash.courseId);
+      showToast(
+        `📍 Aviso de espacio: "${req.room}" también está asignado a ${otherCourse ? otherCourse.name : 'otro curso'} en este bloque.`,
+        'warn'
+      );
+    }
+  }
 
   saveState();
   return true;
@@ -411,6 +480,7 @@ function autoScheduleForCourse(courseId, notify = true) {
 
           let adjacentBonus = 0;
           const prevPeriod = classPeriods[pIdx - 1];
+          const nextPeriod = classPeriods[pIdx + 1];
           if (prevPeriod) {
             const prevAssign = state.assignments[slotKey(courseId, day.index, prevPeriod.id)];
             if (prevAssign && prevAssign.reqId === req.id && sameSubjectOnDay === 1) {
@@ -418,7 +488,32 @@ function autoScheduleForCourse(courseId, notify = true) {
             }
           }
 
-          const score = (sameSubjectOnDay >= 2 ? 500 : 0) + sameSubjectOnDay * 80 + totalClassesOnDay * 3 + pIdx + adjacentBonus;
+          // Optimización anti-ventanas docentes: priorizar bloques contiguos del profesor en el mismo día
+          let teacherGapScore = 0;
+          if (!teacher.isMultiCourseWorkshop) {
+            const hasPrevTeacher = prevPeriod && findTeacherAssignmentsAtSlot(req.teacherId, day.index, prevPeriod.id).length > 0;
+            const hasNextTeacher = nextPeriod && findTeacherAssignmentsAtSlot(req.teacherId, day.index, nextPeriod.id).length > 0;
+            const teacherHasAnyToday = classPeriods.some(
+              (cp) => !isPeriodDisabledOnDay(cp, day.index) && findTeacherAssignmentsAtSlot(req.teacherId, day.index, cp.id).length > 0
+            );
+            if (hasPrevTeacher || hasNextTeacher) {
+              teacherGapScore = -30;
+            } else if (teacherHasAnyToday) {
+              teacherGapScore = 25;
+            }
+          }
+
+          // Penalizar si la sala compartida ya está ocupada en este bloque
+          const roomPenalty = req.room && findRoomConflict(req.room, day.index, period.id, courseId) ? 120 : 0;
+
+          const score =
+            (sameSubjectOnDay >= 2 ? 500 : 0) +
+            sameSubjectOnDay * 80 +
+            totalClassesOnDay * 3 +
+            pIdx +
+            adjacentBonus +
+            teacherGapScore +
+            roomPenalty;
           if (score < bestScore) {
             bestScore = score;
             bestSlot = { dayIndex: day.index, periodId: period.id };

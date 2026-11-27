@@ -63,6 +63,9 @@ async function pushStateToCloud(year = currentSchoolYear) {
     }
 
     lastSyncedUpdatedAt = Number(payload.updatedAt || Date.now());
+    state.updatedAt = lastSyncedUpdatedAt;
+    state.updatedBy = payload.updatedBy;
+    updateAuditStatusUI();
     updateCloudStatusUI('connected', '🔒 Nube Sincronizada');
     return true;
   } catch (err) {
@@ -193,10 +196,12 @@ async function pullStateFromCloud(year = currentSchoolYear, options = { force: f
         assignments: cloudData.assignments || {},
         teacherUnavailable: cloudData.teacherUnavailable || {},
         updatedAt: cloudUpdatedAt || Date.now(),
+        updatedBy: cloudData.updatedBy || '',
         clientId: cloudData.clientId || ''
       };
       lastSyncedUpdatedAt = Number(state.updatedAt || 0);
       hasUnsavedChanges = false;
+      updateAuditStatusUI();
       updateSaveButtonUI();
       try {
         localStorage.setItem(getStorageKeyForYear(year), JSON.stringify(state));
@@ -218,13 +223,71 @@ async function pullStateFromCloud(year = currentSchoolYear, options = { force: f
   }
 }
 
+async function syncAvailableYearsFromCloud() {
+  if (!isAuthenticated()) return;
+  const endpoint = getCloudYearsEndpoint();
+  if (!endpoint) return;
+  try {
+    const res = await authenticatedDatabaseFetch(endpoint, { cache: 'no-store' }, `t=${Date.now()}`);
+    if (!res.ok) return;
+    const remoteYears = await res.json();
+    if (Array.isArray(remoteYears) && remoteYears.length > 0) {
+      let changed = false;
+      remoteYears.forEach((y) => {
+        const clean = String(y).trim();
+        if (/^[0-9]{4}$/.test(clean) && !availableSchoolYears.includes(clean)) {
+          availableSchoolYears.push(clean);
+          changed = true;
+        }
+      });
+      if (changed) {
+        saveAvailableSchoolYears();
+        renderSchoolYearSelector();
+      }
+    }
+  } catch (err) {
+    console.warn('No se pudo sincronizar lista de años escolares:', err);
+  }
+}
+
+async function pushAvailableYearsToCloud() {
+  if (!isAuthenticated()) return;
+  const endpoint = getCloudYearsEndpoint();
+  if (!endpoint) return;
+  try {
+    await authenticatedDatabaseFetch(endpoint, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(availableSchoolYears)
+    });
+  } catch (err) {
+    console.warn('No se pudo publicar lista de años escolares:', err);
+  }
+}
+
+async function checkCloudAndPullIfNeeded(year = currentSchoolYear) {
+  if (!isAuthenticated() || document.hidden || isPushingToCloud || hasUnsavedChanges) return;
+  const tsEndpoint = getCloudUpdatedAtEndpoint(year);
+  if (!tsEndpoint) return;
+  try {
+    const res = await authenticatedDatabaseFetch(tsEndpoint, { cache: 'no-store' }, `t=${Date.now()}`);
+    if (!res.ok) return;
+    const remoteUpdatedAt = Number(await res.json()) || 0;
+    const localUpdatedAt = Number(state.updatedAt || 0);
+    if (remoteUpdatedAt > localUpdatedAt) {
+      await pullStateFromCloud(year, { force: false, silent: true });
+    }
+  } catch (err) {
+    // Error silencioso en polling ligero
+  }
+}
+
 function startCloudSyncLoop() {
   if (cloudSyncTimer) clearInterval(cloudSyncTimer);
+  syncAvailableYearsFromCloud();
   cloudSyncTimer = setInterval(() => {
-    if (isAuthenticated() && getActiveFirebaseUrl() && !isPushingToCloud && !hasUnsavedChanges) {
-      pullStateFromCloud(currentSchoolYear, { force: false, silent: true });
-    }
-  }, 4000);
+    checkCloudAndPullIfNeeded(currentSchoolYear);
+  }, 5000);
 }
 
 function loadState(year = null) {
@@ -241,6 +304,7 @@ function loadState(year = null) {
     renderSchoolYearSelector();
 
     undoStack = [];
+    redoStack = [];
     hasUnsavedChanges = false;
     lastSyncedUpdatedAt = 0;
     updateUndoButton();
@@ -258,8 +322,10 @@ function loadState(year = null) {
           assignments: parsed.assignments || {},
           teacherUnavailable: parsed.teacherUnavailable || {},
           updatedAt: Number(parsed.updatedAt || 0),
+          updatedBy: parsed.updatedBy || '',
           clientId: parsed.clientId || CLIENT_SESSION_ID
         };
+        updateAuditStatusUI();
         if (isAuthenticated() && getActiveFirebaseUrl()) {
           pullStateFromCloud(currentSchoolYear, { force: true, silent: true, isInitial: true });
         } else {
@@ -288,6 +354,21 @@ function loadState(year = null) {
   } else {
     updateCloudStatusUI('disconnected');
   }
+}
+
+function updateAuditStatusUI() {
+  const el = document.getElementById('lastSavedAuditText');
+  if (!el) return;
+  const ts = Number(state.updatedAt || 0);
+  if (!ts) {
+    el.textContent = `Año Escolar ${currentSchoolYear} · Sin registros de guardado en la nube aún.`;
+    return;
+  }
+  const dt = new Date(ts);
+  const dateStr = dt.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const timeStr = dt.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+  const who = state.updatedBy ? ` por ${state.updatedBy}` : '';
+  el.textContent = `🕒 Último guardado (${currentSchoolYear}): ${dateStr} a las ${timeStr}${who}`;
 }
 
 function saveState(markUnsaved = true) {

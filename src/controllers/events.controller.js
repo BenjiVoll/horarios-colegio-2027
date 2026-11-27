@@ -90,8 +90,12 @@ function initEventListeners() {
   setupMobileCollapse('btnToggleTeacherFormMobile', 'teacherFormCard', '+ Mostrar Formulario', '▾ Ocultar');
   setupMobileCollapse('btnTogglePeriodFormMobile', 'periodFormCard', '+ Mostrar Formulario', '▾ Ocultar');
 
-  // Botón Deshacer
+  // Botones Deshacer y Rehacer
   document.getElementById('btnUndo').addEventListener('click', performUndo);
+  const btnRedo = document.getElementById('btnRedo');
+  if (btnRedo) {
+    btnRedo.addEventListener('click', performRedo);
+  }
 
   // Inspector rápido al hacer clic en el indicador global de Topones
   const conflictBadge = document.getElementById('globalConflictBadge');
@@ -207,12 +211,14 @@ function initEventListeners() {
 
       state = nextState;
       undoStack = [];
+      redoStack = [];
       lastSyncedUpdatedAt = 0;
       ui.selectedPaletteReqId = null;
       ui.swapSourceSlot = null;
       ui.selectedTeacherViewReqId = null;
 
       renderSchoolYearSelector();
+      pushAvailableYearsToCloud();
       saveState(true);
       updateUndoButton();
       renderAll();
@@ -434,6 +440,8 @@ function initEventListeners() {
     const shortCode = document.getElementById('reqShortCodeInput').value.trim().toUpperCase();
     const teacherId = document.getElementById('reqTeacherSelect').value;
     const hoursPerWeek = Number(document.getElementById('reqHoursInput').value) || 2;
+    const roomInput = document.getElementById('reqRoomInput');
+    const room = roomInput ? roomInput.value.trim() : '';
 
     if (!subject || !teacherId) return;
 
@@ -447,13 +455,15 @@ function initEventListeners() {
           subject,
           shortCode,
           teacherId,
-          hoursPerWeek
+          hoursPerWeek,
+          room
         };
         for (const k in state.assignments) {
           if (state.assignments[k].reqId === reqId) {
             state.assignments[k].subject = subject;
             state.assignments[k].shortCode = shortCode;
             state.assignments[k].teacherId = teacherId;
+            state.assignments[k].room = room;
           }
         }
         showToast('Asignatura del curso actualizada.', 'success');
@@ -465,7 +475,8 @@ function initEventListeners() {
         subject,
         shortCode,
         teacherId,
-        hoursPerWeek
+        hoursPerWeek,
+        room
       });
       showToast('Asignatura agregada al plan del curso.', 'success');
     }
@@ -474,6 +485,105 @@ function initEventListeners() {
     saveState();
     renderAll();
   });
+
+  // Guardar nombre de curso y Profesor Jefe
+  const btnSaveCourseMeta = document.getElementById('btnSaveCourseMeta');
+  if (btnSaveCourseMeta) {
+    btnSaveCourseMeta.addEventListener('click', () => {
+      if (!ui.selectedPlanCourseId) return;
+      const course = state.courses.find((c) => c.id === ui.selectedPlanCourseId);
+      if (!course) return;
+      const newName = (document.getElementById('editCourseNameInput')?.value || '').trim();
+      const headTeacherId = document.getElementById('editCourseHeadTeacherSelect')?.value || '';
+      if (!newName) {
+        showToast('El nombre del curso no puede estar vacío.', 'warn');
+        return;
+      }
+      pushUndoSnapshot();
+      course.name = newName;
+      course.short = newName.slice(0, 3);
+      course.headTeacherId = headTeacherId || null;
+      saveState();
+      renderAll();
+      showToast(`🏫 Curso "${newName}" actualizado (incluye Profesor Jefe para PDF).`, 'success');
+    });
+  }
+
+  // Copiar plan de estudio desde otro curso
+  const btnCopyCoursePlan = document.getElementById('btnCopyCoursePlan');
+  if (btnCopyCoursePlan) {
+    btnCopyCoursePlan.addEventListener('click', () => {
+      const sourceCourseId = document.getElementById('selectCopyPlanSourceCourse')?.value || '';
+      if (!sourceCourseId || !ui.selectedPlanCourseId) {
+        showToast('Selecciona un curso de origen para copiar su plan de estudio.', 'warn');
+        return;
+      }
+      const sourceCourse = state.courses.find((c) => c.id === sourceCourseId);
+      const targetCourse = state.courses.find((c) => c.id === ui.selectedPlanCourseId);
+      const sourceReqs = state.requirements.filter((r) => r.courseId === sourceCourseId);
+      if (sourceReqs.length === 0) {
+        showToast('El curso seleccionado no tiene asignaturas para copiar.', 'warn');
+        return;
+      }
+      if (
+        !confirm(
+          `¿Copiar las ${sourceReqs.length} asignaturas desde ${sourceCourse ? sourceCourse.name : 'curso origen'} hacia ${
+            targetCourse ? targetCourse.name : 'este curso'
+          }? (Se agregarán al plan actual).`
+        )
+      ) {
+        return;
+      }
+      pushUndoSnapshot();
+      sourceReqs.forEach((sr) => {
+        state.requirements.push({
+          id: uid('req'),
+          courseId: ui.selectedPlanCourseId,
+          subject: sr.subject,
+          shortCode: sr.shortCode,
+          teacherId: sr.teacherId,
+          hoursPerWeek: sr.hoursPerWeek,
+          room: sr.room || ''
+        });
+      });
+      saveState();
+      renderAll();
+      showToast(`📋 Plan de ${sourceReqs.length} asignaturas copiado correctamente.`, 'success');
+    });
+  }
+
+  // Buscador de Reemplazos (Profesores Libres)
+  const freeTeachersModal = document.getElementById('freeTeachersModal');
+  const closeFreeTeachersModal = () => {
+    if (freeTeachersModal) freeTeachersModal.classList.add('hidden');
+  };
+  ['btnOpenFreeTeachersPanorama', 'btnOpenFreeTeachersFromView'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', openFreeTeachersModal);
+  });
+  const btnCloseFreeT = document.getElementById('btnCloseFreeTeachersModal');
+  const btnCancelFreeT = document.getElementById('btnCancelFreeTeachersModal');
+  if (btnCloseFreeT) btnCloseFreeT.addEventListener('click', closeFreeTeachersModal);
+  if (btnCancelFreeT) btnCancelFreeT.addEventListener('click', closeFreeTeachersModal);
+  if (freeTeachersModal) {
+    freeTeachersModal.addEventListener('click', (e) => {
+      if (e.target === freeTeachersModal) closeFreeTeachersModal();
+    });
+  }
+  const freeDaySel = document.getElementById('freeSearchDaySelect');
+  const freePeriodSel = document.getElementById('freeSearchPeriodSelect');
+  if (freeDaySel) freeDaySel.addEventListener('change', renderFreeTeachersResults);
+  if (freePeriodSel) freePeriodSel.addEventListener('change', renderFreeTeachersResults);
+
+  // Compartir horarios por WhatsApp
+  const btnShareCourseWA = document.getElementById('btnShareCourseWhatsApp');
+  if (btnShareCourseWA) {
+    btnShareCourseWA.addEventListener('click', () => shareScheduleViaWhatsApp('course'));
+  }
+  const btnShareTeacherWA = document.getElementById('btnShareTeacherWhatsApp');
+  if (btnShareTeacherWA) {
+    btnShareTeacherWA.addEventListener('click', () => shareScheduleViaWhatsApp('teacher'));
+  }
 
   document.getElementById('btnCancelReqEdit').addEventListener('click', resetRequirementForm);
 
@@ -568,9 +678,22 @@ function initEventListeners() {
   }
 
   window.addEventListener('keydown', (e) => {
+    const tag = (e.target && e.target.tagName ? e.target.tagName : '').toUpperCase();
+    const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable);
+
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
       commitSaveToDatabase();
+    } else if (!isTyping && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        performRedo();
+      } else {
+        performUndo();
+      }
+    } else if (!isTyping && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      performRedo();
     } else if (e.key === 'Escape') {
       closeQuickAssignModal();
       const tdModal = document.getElementById('teacherDetailModal');
@@ -579,7 +702,16 @@ function initEventListeners() {
       if (cModal) cModal.classList.add('hidden');
       const nyModal = document.getElementById('newSchoolYearModal');
       if (nyModal) nyModal.classList.add('hidden');
+      const ftModal = document.getElementById('freeTeachersModal');
+      if (ftModal) ftModal.classList.add('hidden');
       closePdfExportModal();
+    }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && isAuthenticated()) {
+      checkCloudAndPullIfNeeded(currentSchoolYear);
+      syncAvailableYearsFromCloud();
     }
   });
 

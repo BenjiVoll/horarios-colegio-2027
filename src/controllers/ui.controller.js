@@ -1,12 +1,46 @@
-function renderAll() {
+function getActiveTabId() {
+  const activePanel = document.querySelector('.tab-panel.active');
+  return activePanel ? activePanel.id : 'tab-calendario';
+}
+
+function renderTabById(tabId) {
+  switch (tabId) {
+    case 'tab-calendario':
+      renderSchedulerTab();
+      break;
+    case 'tab-resumen':
+      renderPanoramaGeneralTab();
+      break;
+    case 'tab-profesor-vista':
+      renderTeacherViewTab();
+      break;
+    case 'tab-profesores':
+      renderTeachersManagementTab();
+      break;
+    case 'tab-cursos':
+      renderCoursesManagementTab();
+      break;
+    case 'tab-bloques':
+      renderPeriodsTab();
+      break;
+    default:
+      break;
+  }
+}
+
+function renderAll(forceAllTabs = false) {
   ensureValidSelections();
   updateGlobalCounters();
-  renderSchedulerTab();
-  renderPanoramaGeneralTab();
-  renderTeacherViewTab();
-  renderTeachersManagementTab();
-  renderCoursesManagementTab();
-  renderPeriodsTab();
+  if (forceAllTabs) {
+    renderSchedulerTab();
+    renderPanoramaGeneralTab();
+    renderTeacherViewTab();
+    renderTeachersManagementTab();
+    renderCoursesManagementTab();
+    renderPeriodsTab();
+    return;
+  }
+  renderTabById(getActiveTabId());
 }
 
 function ensureValidSelections() {
@@ -303,11 +337,16 @@ function renderCourseCalendarGrid() {
               )}</div>`
             : '';
 
+        const roomBadge = currentAssignment.room
+          ? `<div class="block-room-tag">📍 ${escapeHtml(currentAssignment.room)}</div>`
+          : '';
+
         td.innerHTML = `
           <div class="assigned-block" draggable="true" title="Arrastra hacia otro bloque para mover o intercambiar" style="border-left-color:${color}; background:${bg}">
             <button type="button" class="block-remove-btn no-print" title="Quitar bloque">✕</button>
             <div class="block-subject">${escapeHtml(currentAssignment.subject)}</div>
             <div class="block-teacher">👨‍🏫 ${assignedTeacher ? `${escapeHtml(assignedTeacher.name)} (${escapeHtml(initials)})` : ''}</div>
+            ${roomBadge}
             ${conflictHint}
           </div>
         `;
@@ -1466,6 +1505,33 @@ function renderCoursesManagementTab() {
     ? `Plan de Estudio Oficial — ${selectedCourse.name}`
     : 'Plan de Estudio del Curso';
 
+  // Poblar barra de edición de curso, Profesor Jefe y copia de plan
+  const editNameInput = document.getElementById('editCourseNameInput');
+  const headTeacherSel = document.getElementById('editCourseHeadTeacherSelect');
+  const copySourceSel = document.getElementById('selectCopyPlanSourceCourse');
+  if (editNameInput) {
+    editNameInput.value = selectedCourse ? selectedCourse.name : '';
+  }
+  if (headTeacherSel) {
+    headTeacherSel.innerHTML =
+      `<option value="">Sin profesor jefe asignado</option>` +
+      state.teachers
+        .filter((t) => !t.isMultiCourseWorkshop)
+        .map(
+          (t) =>
+            `<option value="${t.id}" ${selectedCourse && selectedCourse.headTeacherId === t.id ? 'selected' : ''}>[${escapeHtml(
+              t.initials
+            )}] ${escapeHtml(t.name)}</option>`
+        )
+        .join('');
+  }
+  if (copySourceSel) {
+    const otherCourses = state.courses.filter((c) => c.id !== ui.selectedPlanCourseId);
+    copySourceSel.innerHTML =
+      `<option value="">Copiar plan desde otro curso...</option>` +
+      otherCourses.map((c) => `<option value="${c.id}">Desde ${escapeHtml(c.name)}</option>`).join('');
+  }
+
   const reqs = state.requirements.filter((r) => r.courseId === ui.selectedPlanCourseId);
   const sumHours = reqs.reduce((acc, r) => acc + Number(r.hoursPerWeek), 0);
   document.getElementById('coursePlanBadge').textContent = `${sumHours} / 38 bloques semanales`;
@@ -1481,7 +1547,12 @@ function renderCoursesManagementTab() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td data-label="Sigla" class="mobile-card-sigla"><strong>${escapeHtml(r.shortCode || '')}</strong></td>
-      <td data-label="Asignatura" class="mobile-card-title"><strong>${escapeHtml(r.subject)}</strong></td>
+      <td data-label="Asignatura" class="mobile-card-title">
+        <div>
+          <strong>${escapeHtml(r.subject)}</strong>
+          ${r.room ? `<div class="block-room-tag" style="margin-top:2px;">📍 ${escapeHtml(r.room)}</div>` : ''}
+        </div>
+      </td>
       <td data-label="Profesor">
         <div class="teacher-Row-Name">
           <span class="teacher-initials-badge" style="background:${teacher ? teacher.color : '#64748b'}">${
@@ -1511,6 +1582,8 @@ function renderCoursesManagementTab() {
       document.getElementById('reqShortCodeInput').value = r.shortCode || '';
       document.getElementById('reqTeacherSelect').value = r.teacherId;
       document.getElementById('reqHoursInput').value = r.hoursPerWeek;
+      const roomInput = document.getElementById('reqRoomInput');
+      if (roomInput) roomInput.value = r.room || '';
       document.getElementById('btnSaveRequirement').textContent = 'Actualizar';
       document.getElementById('btnCancelReqEdit').classList.remove('hidden');
       document.getElementById('requirementForm').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1639,7 +1712,143 @@ function resetRequirementForm() {
   document.getElementById('reqSubjectInput').value = '';
   document.getElementById('reqShortCodeInput').value = '';
   document.getElementById('reqHoursInput').value = '4';
+  const roomInput = document.getElementById('reqRoomInput');
+  if (roomInput) roomInput.value = '';
   document.getElementById('btnSaveRequirement').textContent = '+ Guardar';
   document.getElementById('btnCancelReqEdit').classList.add('hidden');
+}
+
+/* --------------------------------------------------------------------------
+   BUSCADOR DE REEMPLAZOS (PROFESORES LIBRES) Y COMPARTIR POR WHATSAPP
+   -------------------------------------------------------------------------- */
+function openFreeTeachersModal() {
+  const modal = document.getElementById('freeTeachersModal');
+  const daySel = document.getElementById('freeSearchDaySelect');
+  const periodSel = document.getElementById('freeSearchPeriodSelect');
+  if (!modal || !daySel || !periodSel) return;
+
+  const classPeriods = state.periods.filter((p) => p.type !== 'break');
+  periodSel.innerHTML = classPeriods
+    .map((p) => `<option value="${p.id}">${escapeHtml(p.label)} (${escapeHtml(p.start)} - ${escapeHtml(p.end)})</option>`)
+    .join('');
+
+  if (ui.panoramaActiveDay && ui.panoramaActiveDay !== 'WEEK') {
+    daySel.value = String(ui.panoramaActiveDay);
+  }
+
+  renderFreeTeachersResults();
+  modal.classList.remove('hidden');
+}
+
+function renderFreeTeachersResults() {
+  const container = document.getElementById('freeTeachersResultsContainer');
+  const dayIdx = Number(document.getElementById('freeSearchDaySelect')?.value || 0);
+  const periodId = document.getElementById('freeSearchPeriodSelect')?.value || '';
+  if (!container) return;
+
+  const period = state.periods.find((p) => p.id === periodId);
+  if (!period || isPeriodDisabledOnDay(period, dayIdx)) {
+    container.innerHTML = `<div class="helper-text" style="padding:0.75rem; background:#f8fafc; border-radius:8px;">⚠️ Este bloque no tiene clases habilitadas el día seleccionado (Viernes salida 14:00 hrs).</div>`;
+    return;
+  }
+
+  const { free, busy, unavailable } = findAvailableTeachersAtSlot(dayIdx, periodId);
+
+  if (free.length === 0) {
+    container.innerHTML = `<div class="helper-text" style="padding:0.85rem; background:#fef2f2; color:#991b1b; border-radius:8px;">⛔ No hay docentes libres disponibles en este bloque (${busy.length} en clases, ${unavailable.length} no disponibles).</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div style="font-size:0.8rem; font-weight:700; color:#166534; margin-bottom:0.45rem;">
+      ✅ ${free.length} docente(s) libre(s) disponible(s) · <span style="color:#64748b; font-weight:500;">(${busy.length} en clases, ${unavailable.length} bloqueados)</span>
+    </div>
+    <div class="modal-options-list">
+      ${free
+        .map(
+          ({ teacher, assignedCount, plannedCount }) => `
+        <div class="modal-option-btn" style="cursor:default;">
+          <div style="display:flex; align-items:center; gap:0.55rem;">
+            <span class="teacher-initials-badge" style="background:${teacher.color}">${escapeHtml(teacher.initials)}</span>
+            <div>
+              <div style="font-weight:700; font-size:0.86rem;">${escapeHtml(teacher.name)}</div>
+              <div style="font-size:0.74rem; color:#64748b;">${escapeHtml(teacher.specialty)}</div>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:0.4rem;">
+            <span class="badge-pill badge-ok">${assignedCount}/${plannedCount}h</span>
+            <button type="button" class="btn btn-outline btn-xs btn-jump-free-teacher" data-tid="${teacher.id}">🗓️ Ver</button>
+          </div>
+        </div>
+      `
+        )
+        .join('')}
+    </div>
+  `;
+
+  container.querySelectorAll('.btn-jump-free-teacher').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      ui.activeViewTeacherId = btn.dataset.tid;
+      document.getElementById('freeTeachersModal').classList.add('hidden');
+      switchTab('tab-profesor-vista');
+      renderAll();
+    });
+  });
+}
+
+function shareScheduleViaWhatsApp(type) {
+  const classPeriods = state.periods.filter((p) => p.type !== 'break');
+  let lines = [];
+
+  if (type === 'course') {
+    const course = state.courses.find((c) => c.id === ui.activeCourseId);
+    if (!course) return;
+    lines.push(`*Christian College — Horario ${currentSchoolYear}*`);
+    lines.push(`🏫 *Curso:* ${course.name}`);
+    DAYS.forEach((day) => {
+      const dayItems = [];
+      classPeriods.forEach((p) => {
+        if (isPeriodDisabledOnDay(p, day.index)) return;
+        const a = state.assignments[slotKey(course.id, day.index, p.id)];
+        if (a) {
+          const t = state.teachers.find((x) => x.id === a.teacherId);
+          const roomStr = a.room ? ` [📍${a.room}]` : '';
+          dayItems.push(`  • ${p.start}-${p.end}: ${a.subject} (${t ? t.initials : ''})${roomStr}`);
+        }
+      });
+      if (dayItems.length > 0) {
+        lines.push(`\n*${day.name}*`);
+        lines.push(...dayItems);
+      }
+    });
+  } else {
+    const teacher = state.teachers.find((t) => t.id === ui.activeViewTeacherId);
+    if (!teacher) return;
+    lines.push(`*Christian College — Horario Docente ${currentSchoolYear}*`);
+    lines.push(`👨‍🏫 *Profesor(a):* ${teacher.name} (${teacher.initials})`);
+    DAYS.forEach((day) => {
+      const dayItems = [];
+      classPeriods.forEach((p) => {
+        if (isPeriodDisabledOnDay(p, day.index)) return;
+        const slots = findTeacherAssignmentsAtSlot(teacher.id, day.index, p.id);
+        if (slots.length > 0) {
+          const cNames = slots.map((s) => state.courses.find((c) => c.id === s.courseId)?.short || '').join(', ');
+          const roomStr = slots[0].room ? ` [📍${slots[0].room}]` : '';
+          dayItems.push(`  • ${p.start}-${p.end}: ${slots[0].subject} — ${cNames}${roomStr}`);
+        }
+      });
+      if (dayItems.length > 0) {
+        lines.push(`\n*${day.name}*`);
+        lines.push(...dayItems);
+      }
+    });
+  }
+
+  const message = lines.join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(message).catch(() => {});
+  }
+  window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener');
+  showToast('💬 Horario copiado y abierto para compartir por WhatsApp.', 'success');
 }
 
