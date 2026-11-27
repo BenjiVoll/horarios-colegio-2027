@@ -443,12 +443,18 @@ function exportToJSON() {
 }
 
 function importFromJSON(file) {
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('El archivo de respaldo supera el límite máximo permitido (5 MB).', 'error');
+    return;
+  }
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
       const parsed = JSON.parse(e.target.result);
-      if (!parsed || !Array.isArray(parsed.teachers) || !Array.isArray(parsed.courses)) {
-        showToast('El archivo de respaldo no tiene un formato válido.', 'error');
+      const validation = validateImportedBackupData(parsed);
+      if (!validation.ok) {
+        showToast(`⚠️ ${validation.error}`, 'error');
         return;
       }
       pushUndoSnapshot();
@@ -458,13 +464,16 @@ function importFromJSON(file) {
         periods: parsed.periods || [],
         requirements: parsed.requirements || [],
         assignments: parsed.assignments || {},
-        teacherUnavailable: parsed.teacherUnavailable || {}
+        teacherUnavailable: parsed.teacherUnavailable || {},
+        updatedAt: Date.now(),
+        updatedBy: authSession ? authSession.email : '',
+        clientId: CLIENT_SESSION_ID
       };
       saveState();
       renderAll();
-      showToast('📂 Respaldo cargado correctamente.', 'success');
+      showToast('📂 Respaldo validado y cargado correctamente.', 'success');
     } catch (err) {
-      showToast('Error al leer el archivo de respaldo.', 'error');
+      showToast('Error al leer el archivo JSON. Verifica que no esté dañado.', 'error');
     }
   };
   reader.readAsText(file);

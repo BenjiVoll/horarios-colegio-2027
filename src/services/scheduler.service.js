@@ -229,6 +229,10 @@ function findRoomConflict(room, dayIndex, periodId, ignoreCourseId = null) {
  * Intercambia (hace enroque) o mueve un bloque ya asignado hacia otro bloque del mismo curso.
  */
 function swapOrMoveSlotsInCourse(courseId, fromDay, fromPeriodId, toDay, toPeriodId) {
+  if (!state.courses.some((c) => c.id === courseId)) return false;
+  if (Number(fromDay) < 0 || Number(fromDay) >= DAYS.length || Number(toDay) < 0 || Number(toDay) >= DAYS.length) {
+    return false;
+  }
   if (Number(fromDay) === Number(toDay) && fromPeriodId === toPeriodId) return false;
 
   const targetPeriod = state.periods.find((p) => p.id === toPeriodId);
@@ -309,6 +313,15 @@ function swapOrMoveSlotsInCourse(courseId, fromDay, fromPeriodId, toDay, toPerio
 }
 
 function assignRequirementToSlot(courseId, dayIndex, periodId, reqId, silent = false) {
+  if (!state.courses.some((c) => c.id === courseId)) {
+    if (!silent) showToast('El curso seleccionado no existe.', 'error');
+    return false;
+  }
+  if (!Number.isInteger(Number(dayIndex)) || Number(dayIndex) < 0 || Number(dayIndex) >= DAYS.length) {
+    if (!silent) showToast('Día de la semana no válido.', 'error');
+    return false;
+  }
+
   const period = state.periods.find((p) => p.id === periodId);
   if (!period || period.type === 'break') {
     if (!silent) showToast('No se pueden asignar clases en un bloque de recreo o almuerzo.', 'warn');
@@ -320,8 +333,11 @@ function assignRequirementToSlot(courseId, dayIndex, periodId, reqId, silent = f
     return false;
   }
 
-  const req = state.requirements.find((r) => r.id === reqId);
-  if (!req) return false;
+  const req = state.requirements.find((r) => r.id === reqId && r.courseId === courseId);
+  if (!req) {
+    if (!silent) showToast('La asignatura seleccionada no corresponde a este curso.', 'error');
+    return false;
+  }
 
   const teacher = state.teachers.find((t) => t.id === req.teacherId);
   if (!teacher) {

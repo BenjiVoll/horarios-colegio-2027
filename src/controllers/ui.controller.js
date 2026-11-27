@@ -1199,12 +1199,38 @@ function renderTeachersManagementTab() {
     `;
   }
 
-  const filtered = state.teachers.filter(
-    (t) =>
+  const activeFilter = ui.teacherWorkloadFilter || 'ALL';
+  document.querySelectorAll('#workloadFilterBar .filter-chip').forEach((chip) => {
+    chip.classList.toggle('active', chip.dataset.filter === activeFilter);
+  });
+
+  const filtered = state.teachers.filter((t) => {
+    const matchesQuery =
+      !query ||
       t.name.toLowerCase().includes(query) ||
       (t.initials || '').toLowerCase().includes(query) ||
-      t.specialty.toLowerCase().includes(query)
-  );
+      t.specialty.toLowerCase().includes(query);
+    if (!matchesQuery) return false;
+
+    if (activeFilter === 'ALL') return true;
+    const planned = getPlannedHoursForTeacher(t.id);
+    const scheduled = getAssignedHoursForTeacher(t.id);
+    const otherL = Number(t.otherLectivasHours || 0);
+    const sepH = Number(t.sepHours || 0);
+    const aulaChrono = ((scheduled + otherL + sepH) * 45) / 60;
+    const contract = Number(t.contractChrono || 38);
+    const pct = contract > 0 ? Math.round((aulaChrono / contract) * 100) : 0;
+
+    if (activeFilter === 'ALERT_65') return !t.isMultiCourseWorkshop && pct > 66;
+    if (activeFilter === 'PENDING') return scheduled < planned;
+    if (activeFilter === 'SEP') return otherL > 0 || sepH > 0;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:1.5rem; color:#64748b;">No hay docentes que coincidan con el filtro seleccionado.</td></tr>`;
+    return;
+  }
 
   filtered.forEach((t) => {
     const plannedCourses = getPlannedHoursForTeacher(t.id);
@@ -1216,56 +1242,64 @@ function renderTeachersManagementTab() {
     const totalAulaChrono = (totalAulaPedag * 45) / 60;
     const contractChrono = Number(t.contractChrono || 38);
     const nonTeachingChrono = Math.max(0, contractChrono - totalAulaChrono);
-    const pctLectivo = contractChrono > 0 ? Math.round((totalAulaChrono / contractChrono) * 100) : 0;
+    const pctLectivo = contractChrono > 0 ? Math.min(100, Math.round((totalAulaChrono / contractChrono) * 100)) : 0;
     const pctNoLectivo = Math.max(0, 100 - pctLectivo);
     const exceeds65 = !t.isMultiCourseWorkshop && pctLectivo > 66;
+    const isComplete = scheduledCourses >= plannedCourses;
 
-    const isComplete = scheduledCourses === plannedCourses;
+    let extraTags = '';
+    if (otherLectivas > 0) extraTags += `<span class="mini-tag">+${otherLectivas}h Kº/CRA</span>`;
+    if (sepHours > 0) extraTags += `<span class="mini-tag mini-tag-sep">+${sepHours}h SEP</span>`;
+
+    let statusBadge = `<span class="badge-pill badge-ok">✅ En regla</span>`;
+    if (exceeds65) {
+      statusBadge = `<span class="badge-pill badge-danger">⚠️ Sobre 65%</span>`;
+    } else if (!isComplete) {
+      statusBadge = `<span class="badge-pill badge-warn">⏳ Faltan ${plannedCourses - scheduledCourses}h</span>`;
+    }
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td data-label="Sigla" class="mobile-card-sigla">
-        <span class="teacher-initials-badge" style="background:${t.color}">${escapeHtml(t.initials || '')}</span>
-      </td>
-      <td data-label="Profesor(a)" class="mobile-card-title"><strong>${escapeHtml(t.name)}</strong></td>
-      <td data-label="Especialidad">${escapeHtml(t.specialty)}</td>
-      <td data-label="Hrs Plan (1º-8º)"><strong>${plannedCourses}</strong> hrs</td>
-      <td data-label="En Horario (1º-8º)">
-        <span class="badge-pill ${isComplete ? 'badge-ok' : 'badge-warn'}">
-          ${scheduledCourses} / ${plannedCourses} hrs
-        </span>
-      </td>
-      <td data-label="Kº/CRA y SEP">
-        ${otherLectivas > 0 ? `<div>+${otherLectivas}h (Kº/CRA)</div>` : ''}
-        ${sepHours > 0 ? `<div><strong>+${sepHours}h SEP</strong></div>` : ''}
-        ${otherLectivas === 0 && sepHours === 0 ? '<span style="color:#94a3b8;">0 hrs</span>' : ''}
-      </td>
-      <td data-label="Total Aula">
-        <div>
-          <strong>${totalAulaPedag} hrs pedag.</strong>
-          <div style="font-size:0.73rem; color:#64748b;">(${totalAulaChrono.toFixed(2)} hrs cron.)</div>
+      <td data-label="Docente" class="mobile-card-title">
+        <div class="teacher-identity-cell">
+          <span class="teacher-initials-badge" style="background:${t.color}">${escapeHtml(t.initials || '')}</span>
+          <div class="teacher-identity-text">
+            <strong>${escapeHtml(t.name)}</strong>
+            <small>${escapeHtml(t.specialty)}</small>
+          </div>
         </div>
       </td>
-      <td data-label="No Lectivas (65/35)">
-        <div>
-          <div><strong>${nonTeachingChrono.toFixed(2)} hrs cron.</strong> no lectivas</div>
-          <span class="badge-pill ${exceeds65 ? 'badge-danger' : 'badge-ok'}" style="margin-top:2px; font-size:0.7rem;" title="Proporción horas lectivas / no lectivas respecto al contrato">
-            ${pctLectivo}% Aula / ${pctNoLectivo}% No Lect.
-          </span>
+      <td data-label="Horario (1º-8º)">
+        <div class="workload-hours-cell">
+          <span class="badge-pill ${isComplete ? 'badge-ok' : 'badge-warn'}">${scheduledCourses} / ${plannedCourses}h</span>
+          ${extraTags ? `<div class="mini-tags-row">${extraTags}</div>` : ''}
         </div>
       </td>
       <td data-label="Contrato">
         <div>
-          <strong>${contractChrono} hrs</strong>
-          ${t.pieInfo ? `<span class="badge-pill" style="margin-left:4px;">${escapeHtml(t.pieInfo)}</span>` : ''}
+          <strong>${contractChrono}h</strong> <span style="font-size:0.74rem; color:#64748b;">cron.</span>
+          ${t.pieInfo ? `<div><span class="mini-tag">${escapeHtml(t.pieInfo)}</span></div>` : ''}
         </div>
       </td>
+      <td data-label="Proporción 65/35">
+        <div class="ratio-bar-box" title="${totalAulaPedag} hrs pedagógicas (${totalAulaChrono.toFixed(1)}h cron. aula) / ${nonTeachingChrono.toFixed(1)}h cron. no lectivas">
+          <div class="ratio-bar-labels">
+            <span class="${exceeds65 ? 'text-danger-bold' : ''}">Aula <strong>${pctLectivo}%</strong> (${totalAulaChrono.toFixed(1)}h)</span>
+            <span>No Lect. <strong>${pctNoLectivo}%</strong> (${nonTeachingChrono.toFixed(1)}h)</span>
+          </div>
+          <div class="ratio-bar-track">
+            <div class="ratio-bar-fill ${exceeds65 ? 'over' : ''}" style="width:${pctLectivo}%"></div>
+            <div class="ratio-bar-limit" title="Límite legal 65%"></div>
+          </div>
+        </div>
+      </td>
+      <td data-label="Estado">${statusBadge}</td>
       <td data-label="Acciones" class="no-print mobile-card-actions">
         <div style="display:flex; gap:0.35rem; flex-wrap:wrap; justify-content:flex-end;">
-          <button type="button" class="btn btn-outline btn-xs btn-ficha-t" title="Ver Ficha de Horas Lectivas y No Lectivas">📋 Ficha</button>
-          <button type="button" class="btn btn-outline btn-xs btn-view-t" title="Ver Horario">🗓️</button>
-          <button type="button" class="btn btn-outline btn-xs btn-edit-t" title="Editar">✏️</button>
-          <button type="button" class="btn btn-danger-outline btn-xs btn-del-t" title="Eliminar">🗑️</button>
+          <button type="button" class="btn btn-outline btn-xs btn-ficha-t" title="Ver Ficha Detallada 65/35">📋 Ficha</button>
+          <button type="button" class="btn btn-outline btn-xs btn-view-t" title="Ver Horario del Profesor">🗓️</button>
+          <button type="button" class="btn btn-outline btn-xs btn-edit-t" title="Editar Profesor">✏️</button>
+          <button type="button" class="btn btn-danger-outline btn-xs btn-del-t" title="Eliminar Profesor">🗑️</button>
         </div>
       </td>
     `;
@@ -1296,26 +1330,23 @@ function renderTeachersManagementTab() {
       const nonTeachInput = document.getElementById('teacherNonTeachingInput');
       if (nonTeachInput) nonTeachInput.value = t.nonTeachingDetail || '';
       document.getElementById('teacherColorInput').value = t.color;
-      document.getElementById('btnCancelTeacherEdit').classList.remove('hidden');
-      const teacherFormCard = document.getElementById('teacherFormCard');
-      const teacherFormToggleBtn = document.getElementById('btnToggleTeacherFormMobile');
-      if (teacherFormCard) {
-        teacherFormCard.classList.remove('is-collapsed-mobile');
-      }
-      if (teacherFormToggleBtn) {
-        teacherFormToggleBtn.setAttribute('aria-expanded', 'true');
-        teacherFormToggleBtn.textContent = '▾ Ocultar';
-      }
-      document.getElementById('teacherForm').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const tfModal = document.getElementById('teacherFormModal');
+      if (tfModal) tfModal.classList.remove('hidden');
     });
 
     tr.querySelector('.btn-del-t').addEventListener('click', () => {
-      if (!confirm(`¿Eliminar a ${t.name}?`)) return;
+      if (!confirm(`¿Eliminar a ${t.name}? Se quitarán también sus asignaturas y bloques asignados.`)) return;
       pushUndoSnapshot();
       state.teachers = state.teachers.filter((x) => x.id !== t.id);
       state.requirements = state.requirements.filter((r) => r.teacherId !== t.id);
+      state.courses.forEach((c) => {
+        if (c.headTeacherId === t.id) c.headTeacherId = null;
+      });
       for (const k in state.assignments) {
         if (state.assignments[k].teacherId === t.id) delete state.assignments[k];
+      }
+      for (const uk in state.teacherUnavailable) {
+        if (uk.startsWith(`${t.id}__`)) delete state.teacherUnavailable[uk];
       }
       saveState();
       renderAll();
@@ -1430,17 +1461,21 @@ function openTeacherDetailModal(teacherId) {
 function renderCoursesManagementTab() {
   const listContainer = document.getElementById('coursesListContainer');
   listContainer.innerHTML = '';
+  const maxWeeklySlots = getTotalWeeklyClassSlots(state.periods);
 
   state.courses.forEach((course) => {
     const reqs = state.requirements.filter((r) => r.courseId === course.id);
     const totalHours = reqs.reduce((acc, r) => acc + Number(r.hoursPerWeek), 0);
+    const exceedsMax = totalHours > maxWeeklySlots;
 
     const item = document.createElement('div');
     item.className = `course-list-item ${course.id === ui.selectedPlanCourseId ? 'active' : ''}`;
     item.innerHTML = `
       <div>
         <div class="course-list-item-title">🏫 ${escapeHtml(course.name)}</div>
-        <div class="course-list-item-meta">${reqs.length} asignaturas • ${totalHours} / 38 hrs</div>
+        <div class="course-list-item-meta ${exceedsMax ? 'text-danger-bold' : ''}">
+          ${reqs.length} asignaturas • ${exceedsMax ? '⚠️ ' : ''}${totalHours} / ${maxWeeklySlots} hrs
+        </div>
       </div>
       <div class="no-print" style="display:flex; gap:0.3rem;">
         <button type="button" class="btn btn-outline btn-xs btn-open-cal" title="Ir al horario de este curso">🗓️</button>
@@ -1534,7 +1569,16 @@ function renderCoursesManagementTab() {
 
   const reqs = state.requirements.filter((r) => r.courseId === ui.selectedPlanCourseId);
   const sumHours = reqs.reduce((acc, r) => acc + Number(r.hoursPerWeek), 0);
-  document.getElementById('coursePlanBadge').textContent = `${sumHours} / 38 bloques semanales`;
+  const planBadgeEl = document.getElementById('coursePlanBadge');
+  if (planBadgeEl) {
+    planBadgeEl.textContent =
+      sumHours > maxWeeklySlots
+        ? `⚠️ ${sumHours} / ${maxWeeklySlots} bloques (Excedido)`
+        : `${sumHours} / ${maxWeeklySlots} bloques semanales`;
+    planBadgeEl.className = `badge-pill ${
+      sumHours > maxWeeklySlots ? 'badge-danger' : sumHours === maxWeeklySlots ? 'badge-ok' : 'badge-warn'
+    }`;
+  }
 
   const reqTbody = document.getElementById('requirementsTableBody');
   reqTbody.innerHTML = '';
@@ -1690,7 +1734,7 @@ function switchTab(tabId) {
 }
 
 function resetTeacherForm() {
-  document.getElementById('teacherFormTitle').textContent = 'Agregar / Editar Profesor(a)';
+  document.getElementById('teacherFormTitle').textContent = 'Agregar Nuevo Profesor(a)';
   document.getElementById('teacherIdInput').value = '';
   document.getElementById('teacherInitialsInput').value = '';
   document.getElementById('teacherNameInput').value = '';
@@ -1704,7 +1748,8 @@ function resetTeacherForm() {
   document.getElementById('teacherSepDetailInput').value = '';
   const nonTeachEl = document.getElementById('teacherNonTeachingInput');
   if (nonTeachEl) nonTeachEl.value = '';
-  document.getElementById('btnCancelTeacherEdit').classList.add('hidden');
+  const tfModal = document.getElementById('teacherFormModal');
+  if (tfModal) tfModal.classList.add('hidden');
 }
 
 function resetRequirementForm() {

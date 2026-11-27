@@ -161,11 +161,13 @@ function initEventListeners() {
   if (newYearForm) {
     newYearForm.addEventListener('submit', (e) => {
       e.preventDefault();
-      const targetYear = String(inputNewYear ? inputNewYear.value : '').trim();
-      if (!/^[0-9]{4}$/.test(targetYear)) {
-        showToast('Ingresa un año válido de 4 dígitos (ej. 2028).', 'warn');
+      const yearCheck = validateSchoolYearInput(inputNewYear ? inputNewYear.value : '');
+      if (!yearCheck.ok) {
+        markFieldInvalid(yearCheck.fieldId);
+        showToast(`⚠️ ${yearCheck.error}`, 'warn');
         return;
       }
+      const targetYear = yearCheck.value;
       if (availableSchoolYears.includes(targetYear)) {
         closeNewYearModal();
         loadState(targetYear);
@@ -180,7 +182,9 @@ function initEventListeners() {
         if (!proceed) return;
       }
 
-      const mode = selectNewYearMode ? selectNewYearMode.value : 'clone_structure';
+      const allowedModes = ['clone_structure', 'clone_all', 'blank_base'];
+      const rawMode = selectNewYearMode ? selectNewYearMode.value : 'clone_structure';
+      const mode = allowedModes.includes(rawMode) ? rawMode : 'clone_structure';
       let nextState;
       if (mode === 'clone_all') {
         nextState = JSON.parse(JSON.stringify(state));
@@ -351,21 +355,46 @@ function initEventListeners() {
   document.getElementById('teacherForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const id = document.getElementById('teacherIdInput').value;
-    const initials = document.getElementById('teacherInitialsInput').value.trim().toUpperCase();
-    const name = document.getElementById('teacherNameInput').value.trim();
-    const specialty = document.getElementById('teacherSpecialtyInput').value.trim();
-    const maxHours = Number(document.getElementById('teacherMaxHoursInput').value) || 30;
     const otherLectivasEl = document.getElementById('teacherOtherLectivasInput');
-    const otherLectivasHours = otherLectivasEl ? Number(otherLectivasEl.value) || 0 : 0;
-    const sepHours = Number(document.getElementById('teacherSepHoursInput').value) || 0;
-    const contractChrono = Number(document.getElementById('teacherContractChronoInput').value) || 38;
-    const pieInfo = document.getElementById('teacherPieHoursInput').value.trim();
-    const sepDetail = document.getElementById('teacherSepDetailInput').value.trim();
     const nonTeachingEl = document.getElementById('teacherNonTeachingInput');
-    const nonTeachingDetail = nonTeachingEl ? nonTeachingEl.value.trim() : '';
-    const color = document.getElementById('teacherColorInput').value || '#2563eb';
 
-    if (!name || !initials) return;
+    const validation = validateTeacherPayload(
+      {
+        initials: document.getElementById('teacherInitialsInput').value,
+        name: document.getElementById('teacherNameInput').value,
+        specialty: document.getElementById('teacherSpecialtyInput').value,
+        maxHours: document.getElementById('teacherMaxHoursInput').value,
+        otherLectivasHours: otherLectivasEl ? otherLectivasEl.value : '0',
+        sepHours: document.getElementById('teacherSepHoursInput').value,
+        contractChrono: document.getElementById('teacherContractChronoInput').value,
+        pieInfo: document.getElementById('teacherPieHoursInput').value,
+        sepDetail: document.getElementById('teacherSepDetailInput').value,
+        nonTeachingDetail: nonTeachingEl ? nonTeachingEl.value : '',
+        color: document.getElementById('teacherColorInput').value
+      },
+      state.teachers,
+      id
+    );
+
+    if (!validation.ok) {
+      markFieldInvalid(validation.fieldId);
+      showToast(`⚠️ ${validation.error}`, 'error');
+      return;
+    }
+
+    const {
+      initials,
+      name,
+      specialty,
+      maxHours,
+      otherLectivasHours,
+      sepHours,
+      contractChrono,
+      pieInfo,
+      sepDetail,
+      nonTeachingDetail,
+      color
+    } = validation.data;
 
     pushUndoSnapshot();
 
@@ -416,11 +445,44 @@ function initEventListeners() {
   document.getElementById('btnCancelTeacherEdit').addEventListener('click', resetTeacherForm);
   document.getElementById('searchTeacherInput').addEventListener('input', renderTeachersManagementTab);
 
+  // Modal Crear / Editar Profesor y Filtros Rápidos de Carga Docente
+  const teacherFormModal = document.getElementById('teacherFormModal');
+  const btnOpenNewTeacher = document.getElementById('btnOpenNewTeacherModal');
+  const btnCloseTeacherForm = document.getElementById('btnCloseTeacherFormModal');
+  if (btnOpenNewTeacher && teacherFormModal) {
+    btnOpenNewTeacher.addEventListener('click', () => {
+      resetTeacherForm();
+      teacherFormModal.classList.remove('hidden');
+      const iniInput = document.getElementById('teacherInitialsInput');
+      if (iniInput) iniInput.focus();
+    });
+  }
+  if (btnCloseTeacherForm) {
+    btnCloseTeacherForm.addEventListener('click', resetTeacherForm);
+  }
+  if (teacherFormModal) {
+    teacherFormModal.addEventListener('click', (e) => {
+      if (e.target === teacherFormModal) resetTeacherForm();
+    });
+  }
+
+  document.querySelectorAll('#workloadFilterBar .filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      ui.teacherWorkloadFilter = chip.dataset.filter || 'ALL';
+      renderTeachersManagementTab();
+    });
+  });
+
   document.getElementById('courseForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const nameInput = document.getElementById('courseNameInput');
-    const name = nameInput.value.trim();
-    if (!name) return;
+    const validation = validateCourseName(nameInput.value, state.courses, '', 'courseNameInput');
+    if (!validation.ok) {
+      markFieldInvalid(validation.fieldId);
+      showToast(`⚠️ ${validation.error}`, 'error');
+      return;
+    }
+    const name = validation.value;
     pushUndoSnapshot();
     const newCourse = { id: uid('c'), short: name.slice(0, 3), name };
     state.courses.push(newCourse);
@@ -434,16 +496,58 @@ function initEventListeners() {
 
   document.getElementById('requirementForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!ui.selectedPlanCourseId) return;
+    if (!ui.selectedPlanCourseId) {
+      showToast('Primero selecciona o crea un curso.', 'warn');
+      return;
+    }
     const reqId = document.getElementById('reqIdInput').value;
-    const subject = document.getElementById('reqSubjectInput').value.trim();
-    const shortCode = document.getElementById('reqShortCodeInput').value.trim().toUpperCase();
-    const teacherId = document.getElementById('reqTeacherSelect').value;
-    const hoursPerWeek = Number(document.getElementById('reqHoursInput').value) || 2;
     const roomInput = document.getElementById('reqRoomInput');
-    const room = roomInput ? roomInput.value.trim() : '';
 
-    if (!subject || !teacherId) return;
+    const validation = validateRequirementPayload(
+      {
+        subject: document.getElementById('reqSubjectInput').value,
+        shortCode: document.getElementById('reqShortCodeInput').value,
+        teacherId: document.getElementById('reqTeacherSelect').value,
+        hoursPerWeek: document.getElementById('reqHoursInput').value,
+        room: roomInput ? roomInput.value : ''
+      },
+      state,
+      ui.selectedPlanCourseId,
+      reqId
+    );
+
+    if (!validation.ok) {
+      markFieldInvalid(validation.fieldId);
+      showToast(`⚠️ ${validation.error}`, 'error');
+      return;
+    }
+
+    const { subject, shortCode, teacherId, hoursPerWeek, room } = validation.data;
+
+    // Si cambia el docente de una asignatura ya asignada en horario, verificar si se producen topones
+    if (reqId) {
+      const prevReq = state.requirements.find((r) => r.id === reqId);
+      if (prevReq && prevReq.teacherId !== teacherId) {
+        let clashCount = 0;
+        let unavailableCount = 0;
+        for (const k in state.assignments) {
+          const a = state.assignments[k];
+          if (a.reqId !== reqId) continue;
+          if (findTeacherConflict(teacherId, a.dayIndex, a.periodId, a.courseId)) clashCount++;
+          if (isTeacherUnavailable(teacherId, a.dayIndex, a.periodId)) unavailableCount++;
+        }
+        if (clashCount > 0 || unavailableCount > 0) {
+          const newT = state.teachers.find((t) => t.id === teacherId);
+          const proceed = confirm(
+            `⚠️ Al cambiar el profesor a ${newT ? newT.name : 'este docente'} se generarán:\n` +
+              (clashCount > 0 ? `• ${clashCount} topón(es) de horario con otro curso.\n` : '') +
+              (unavailableCount > 0 ? `• ${unavailableCount} bloque(s) en horario marcado como No Disponible.\n` : '') +
+              `\n¿Deseas realizar el cambio de todas formas para corregirlo luego en el calendario?`
+          );
+          if (!proceed) return;
+        }
+      }
+    }
 
     pushUndoSnapshot();
 
@@ -493,10 +597,21 @@ function initEventListeners() {
       if (!ui.selectedPlanCourseId) return;
       const course = state.courses.find((c) => c.id === ui.selectedPlanCourseId);
       if (!course) return;
-      const newName = (document.getElementById('editCourseNameInput')?.value || '').trim();
+      const nameValidation = validateCourseName(
+        document.getElementById('editCourseNameInput')?.value || '',
+        state.courses,
+        course.id,
+        'editCourseNameInput'
+      );
+      if (!nameValidation.ok) {
+        markFieldInvalid(nameValidation.fieldId);
+        showToast(`⚠️ ${nameValidation.error}`, 'error');
+        return;
+      }
+      const newName = nameValidation.value;
       const headTeacherId = document.getElementById('editCourseHeadTeacherSelect')?.value || '';
-      if (!newName) {
-        showToast('El nombre del curso no puede estar vacío.', 'warn');
+      if (headTeacherId && !state.teachers.some((t) => t.id === headTeacherId)) {
+        showToast('El profesor jefe seleccionado no es válido.', 'error');
         return;
       }
       pushUndoSnapshot();
@@ -589,12 +704,22 @@ function initEventListeners() {
 
   document.getElementById('periodForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    const label = document.getElementById('periodLabelInput').value.trim();
-    const start = document.getElementById('periodStartInput').value;
-    const end = document.getElementById('periodEndInput').value;
-    const type = document.getElementById('periodTypeSelect').value;
-    if (!label || !start || !end) return;
+    const validation = validatePeriodPayload(
+      {
+        label: document.getElementById('periodLabelInput').value,
+        start: document.getElementById('periodStartInput').value,
+        end: document.getElementById('periodEndInput').value,
+        type: document.getElementById('periodTypeSelect').value
+      },
+      state.periods
+    );
+    if (!validation.ok) {
+      markFieldInvalid(validation.fieldId);
+      showToast(`⚠️ ${validation.error}`, 'error');
+      return;
+    }
 
+    const { label, start, end, type } = validation.data;
     pushUndoSnapshot();
     state.periods.push({
       id: uid('p'),
@@ -704,6 +829,8 @@ function initEventListeners() {
       if (nyModal) nyModal.classList.add('hidden');
       const ftModal = document.getElementById('freeTeachersModal');
       if (ftModal) ftModal.classList.add('hidden');
+      const tfModal = document.getElementById('teacherFormModal');
+      if (tfModal) tfModal.classList.add('hidden');
       closePdfExportModal();
     }
   });
@@ -770,8 +897,14 @@ function initEventListeners() {
     btnSaveCloud.addEventListener('click', async () => {
       const rawUrl = (inputFirebaseUrl ? inputFirebaseUrl.value : '').trim();
       const rawApiKey = (inputFirebaseApiKey ? inputFirebaseApiKey.value : '').trim();
-      if (!rawUrl) {
-        showToast('Ingresa la URL de tu Firebase Realtime Database.', 'warn');
+      if (!rawUrl || !isValidHttpsUrl(rawUrl)) {
+        markFieldInvalid('inputFirebaseDbUrl');
+        showToast('⚠️ Ingresa una URL HTTPS válida de Firebase Realtime Database (ej. https://...firebaseio.com).', 'error');
+        return;
+      }
+      if (rawApiKey && !/^AIza[0-9A-Za-z_-]{20,}$/.test(rawApiKey)) {
+        markFieldInvalid('inputFirebaseApiKey');
+        showToast('⚠️ La Firebase Web API Key no tiene un formato válido (debe comenzar con AIza...).', 'error');
         return;
       }
       const cleaned = rawUrl.replace(/\/+$/, '').replace(/\.json$/i, '');
@@ -852,9 +985,9 @@ function initEventListeners() {
   if (btnForgotPwd) {
     btnForgotPwd.addEventListener('click', async () => {
       const email = (emailInput ? emailInput.value : '').trim();
-      if (!email) {
-        showAuthAlert('Escribe primero tu correo institucional arriba para enviarte el enlace de recuperación.', 'error');
-        if (emailInput) emailInput.focus();
+      if (!email || !isValidEmail(email)) {
+        showAuthAlert('Escribe un correo institucional válido arriba para enviarte el enlace de recuperación.', 'error');
+        markFieldInvalid('authEmailInput');
         return;
       }
       try {
@@ -881,8 +1014,14 @@ function initEventListeners() {
       const password = pwdInput ? pwdInput.value : '';
       const remember = rememberCheck ? rememberCheck.checked : true;
 
-      if (!email || !password) {
-        showAuthAlert('Completa tu correo institucional y contraseña.', 'error');
+      if (!email || !isValidEmail(email)) {
+        showAuthAlert('Ingresa un correo electrónico institucional válido.', 'error');
+        markFieldInvalid('authEmailInput');
+        return;
+      }
+      if (!password || password.length < 6) {
+        showAuthAlert('La contraseña debe tener al menos 6 caracteres.', 'error');
+        markFieldInvalid('authPasswordInput');
         return;
       }
 

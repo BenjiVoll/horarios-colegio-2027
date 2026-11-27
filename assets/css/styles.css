@@ -215,6 +215,157 @@ body {
   color: var(--text-muted);
 }
 
+/* Panel Limpio de Docentes y Carga 65/35 */
+.workload-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.workload-toolbar-actions input[type="search"] {
+  min-width: 240px;
+}
+
+.workload-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1.15rem;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.workload-filter-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-chip {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.14s ease;
+}
+
+.filter-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.filter-chip.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+}
+
+.teacher-identity-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.teacher-identity-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.teacher-identity-text strong {
+  font-size: 0.87rem;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.teacher-identity-text small {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.workload-hours-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.mini-tags-row {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.mini-tag {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.69rem;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.mini-tag-sep {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.ratio-bar-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 190px;
+}
+
+.ratio-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.73rem;
+  color: var(--text-muted);
+}
+
+.text-danger-bold {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.ratio-bar-track {
+  position: relative;
+  height: 9px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ratio-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2b6cb0 0%, #3b82f6 100%);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.ratio-bar-fill.over {
+  background: linear-gradient(90deg, #dc2626 0%, #ef4444 100%);
+}
+
+.ratio-bar-limit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 65%;
+  width: 2px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
 .conflict-badge {
   display: inline-flex;
   align-items: center;
@@ -533,6 +684,12 @@ body {
 .form-control:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.form-control.input-invalid {
+  border-color: var(--danger) !important;
+  background-color: #fef2f2;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.16);
 }
 
 .form-control-lg {
@@ -2635,6 +2792,39 @@ body {
 
   .inline-add-form .form-control {
     min-width: 0;
+  }
+
+  .workload-toolbar-actions {
+    width: 100%;
+  }
+
+  .workload-toolbar-actions input[type="search"],
+  .workload-toolbar-actions .btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .workload-filter-bar {
+    padding: 0.5rem 0.75rem;
+  }
+
+  #tab-profesores .teacher-identity-cell {
+    text-align: left;
+  }
+
+  #tab-profesores .workload-hours-cell {
+    align-items: flex-end;
+  }
+
+  #tab-profesores .ratio-bar-box {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #tab-profesores .data-table tbody td[data-label="Proporción 65/35"] {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
   }
 
   #searchTeacherInput {

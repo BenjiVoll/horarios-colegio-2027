@@ -61,6 +61,7 @@ let ui = {
   swapSourceSlot: null,
   panoramaActiveDay: '0', // '0'..'4' o 'WEEK'
   panoramaHighlightTeacherId: '',
+  teacherWorkloadFilter: 'ALL', // 'ALL' | 'ALERT_65' | 'PENDING' | 'SEP'
   courseMobileDay: '0', // '0'..'4' o 'ALL' (solo afecta vista móvil <= 768px)
   teacherMobileDay: '0' // '0'..'4' o 'ALL' (solo afecta vista móvil <= 768px)
 };
